@@ -57,6 +57,20 @@ def search_evidence(
             source_types=source_types,
             min_confidence=min_confidence,
         )
+        # If user searches a new ticker with no indexed docs, best-effort seed and retry once.
+        if company_id and not results:
+            try:
+                seed_evidence(company_id)
+                results = retriever.search(
+                    query=query,
+                    top_k=top_k,
+                    company_id=company_id,
+                    dimension=dimension,
+                    source_types=source_types,
+                    min_confidence=min_confidence,
+                )
+            except Exception as exc:
+                logger.warning("auto_seed_failed company_id=%s error=%s", company_id, exc)
         # Deduplicate by content fingerprint — keep highest-scoring result per unique content
         seen: set = set()
         deduped = []

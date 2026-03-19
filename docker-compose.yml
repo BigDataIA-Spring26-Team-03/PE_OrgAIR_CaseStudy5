@@ -24,7 +24,7 @@ services:
       - CHROMA_PERSIST_DIR=/data/chroma
 
     volumes:
-      - chroma_data:/data/chroma
+      - ./chroma_data:/data/chroma
       - ./results:/app/results
 
     depends_on:
@@ -167,7 +167,5 @@ services:
 
 volumes:
   postgres_data:
-  chroma_data:
-    name: pe_rag_chroma
   redis_data:
     name: pe_rag_redis
