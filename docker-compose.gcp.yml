@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - pe-net
+
+  api:
+    image: us-central1-docker.pkg.dev/project-22a0796a-596d-4fd9-b35/pe-org-air-repo/cs4-api:latest
+    container_name: api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # ChromaDB persistence
+      - CHROMA_PERSIST_DIR=/app/chroma_data
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      # CS base URLs (same app calling itself)
+      - CS1_BASE_URL=http://localhost:8000
+      - CS2_BASE_URL=http://localhost:8000
+      - CS3_BASE_URL=http://localhost:8000
+      # Snowflake, AWS, LLM keys are expected to be provided via .env on the VM
+    env_file:
+      - .env
+    volumes:
+      - /home/ishaansamel/chroma_data:/app/chroma_data
+    networks:
+      - pe-net
+    depends_on:
+      - redis
+
+  streamlit:
+    image: us-central1-docker.pkg.dev/project-22a0796a-596d-4fd9-b35/pe-org-air-repo/cs4-streamlit:latest
+    container_name: streamlit
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://api:8000
+    networks:
+      - pe-net
+    depends_on:
+      - api
+
+networks:
+  pe-net:
+    external: true
+

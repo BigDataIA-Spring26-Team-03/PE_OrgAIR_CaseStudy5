@@ -1,0 +1,107 @@
+{
+  "ticker": "NVDA",
+  "company_name": "NVIDIA Corporation",
+  "sector": "Technology",
+  "assessment_id": "8b32180f-3f5c-4e8a-84fe-324cbc139c4d",
+  "scored_at": "2026-02-20T18:10:36.463192+00:00",
+  "final_score": 71.8244368,
+  "vr_score": 67.36095701,
+  "hr_score": 79.818375,
+  "synergy_score": 68.01458761,
+  "position_factor": 0.428332,
+  "talent_concentration": 0.2521,
+  "confidence": {
+    "ci_lower": 63.84425948,
+    "ci_upper": 79.80454052,
+    "sem": 4.071500267,
+    "reliability": 0.9154228856,
+    "evidence_count": 23
+  },
+  "dimension_scores": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 64.98871794871795,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "Item 7 (MD&A)",
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 1.3,
+      "confidence": 0.99868357671875
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 70.25,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "board_composition",
+        "leadership_signals"
+      ],
+      "total_weight": 1.75,
+      "confidence": 0.993301
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 80.27428571428571,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 1.4,
+      "confidence": 0.9931614375
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 64.10125,
+      "contributing_sources": [
+        "glassdoor_reviews",
+        "technology_hiring"
+      ],
+      "total_weight": 0.8,
+      "confidence": 0.9355125
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 60.35355555555555,
+      "contributing_sources": [
+        "Item 7 (MD&A)",
+        "board_composition",
+        "glassdoor_reviews",
+        "leadership_signals"
+      ],
+      "total_weight": 1.5,
+      "confidence": 0.9970206775
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 77.1923076923077,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "Item 7 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 1.3,
+      "confidence": 0.984369
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 63.619473684210526,
+      "contributing_sources": [
+        "glassdoor_reviews",
+        "leadership_signals"
+      ],
+      "total_weight": 0.95,
+      "confidence": 0.9196
+    }
+  },
+  "scoring_parameters": {
+    "alpha": 0.6,
+    "beta": 0.12,
+    "lambda": 0.25,
+    "delta": 0.15
+  }
+}

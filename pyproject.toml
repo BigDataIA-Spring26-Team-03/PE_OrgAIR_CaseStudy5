@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "pe-orgair-casestudy1"
+version = "0.1.0"
+description = "PE OrgAIR – Case Study 1 (FastAPI + Snowflake + Redis + S3)"
+authors = ["BigDataIA Team 03"]
+readme = "README.md"
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+fastapi = "^0.110.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.6.0"
+pydantic-settings = "^2.2.0"
+snowflake-connector-python = "^3.7.0"
+redis = "^5.0.0"
+structlog = "^24.1.0"
+sec-edgar-downloader = "^5.1.0"
+pymupdf = "^1.26.7"
+pdfplumber = "^0.11.9"
+beautifulsoup4 = "^4.14.3"
+lxml = "^6.0.2"
+python-jobspy = "^1.1.82"
+streamlit = "^1.54.0"
+plotly = "^6.5.2"
+hypothesis = "^6.151.6"
+playwright = "^1.58.0"
+playwright-stealth = "^2.0.2"
+langchain = "^1.2.10"
+langchain-openai = "^1.1.9"
+python-dotenv = "^1.2.1"
+yfinance = "^1.2.0"
+edgartools = "^3.0.0"
+mistralai = "^1.0.0"
+litellm = ">=1.48.0,<2.0"
+rank-bm25 = "^0.2.2"
+chromadb = "^1.5.2"
+sentence-transformers = "^5.2.3"
+onnxruntime = ">=1.16.0,<1.24.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+httpx = "^0.27.0"
+ruff = "^0.9.0"
+pytest-asyncio = "^1.3.0"
+apache-airflow = "2.10.4"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"

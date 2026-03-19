@@ -1,0 +1,173 @@
+services:
+  api:
+    env_file:
+      - .env
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - DEBUG=true
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+      # Snowflake passed from your local environment/.env (NOT committed)
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE}
+      - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+      # CS4: LLM API keys (passed from .env)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # CS4: ChromaDB persistence directory inside the container
+      - CHROMA_PERSIST_DIR=/data/chroma
+
+    volumes:
+      - chroma_data:/data/chroma
+      - ./results:/app/results
+
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+    - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # -------------------------------------------------------
+  # Airflow Services (Case Study 3 - Scoring Pipeline)
+  # -------------------------------------------------------
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  airflow-init:
+    image: apache/airflow:2.10.4-python3.10
+    # JSON array avoids Windows Git Bash path translation of /bin/bash
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        pip install --quiet requests structlog snowflake-connector-python yfinance &&
+        airflow db migrate &&
+        airflow users create
+        --username admin --password admin
+        --firstname Admin --lastname User
+        --role Admin --email admin@example.com || true
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    image: apache/airflow:2.10.4-python3.10
+    user: "50000:0"    
+    # Use _PIP_ADDITIONAL_REQUIREMENTS (built-in Airflow image feature)
+    # and plain command string — no custom entrypoint
+    command: webserver
+    ports:
+      - "8081:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
+      # Install extra packages at container startup (Airflow built-in feature)
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
+      API_BASE_URL: http://host.docker.internal:8000
+      CS2_BASE_URL: http://host.docker.internal:8000
+      CHROMA_PERSIST_DIR: /data/chroma
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # Snowflake creds (for persist_assessment tasks)
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./app:/opt/airflow/app
+      - ./results:/opt/airflow/results
+      - chroma_data:/data/chroma
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+  airflow-scheduler:
+    image: apache/airflow:2.10.4-python3.10
+    user: "50000:0"    
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
+      API_BASE_URL: http://host.docker.internal:8000
+      CS2_BASE_URL: http://host.docker.internal:8000
+      CHROMA_PERSIST_DIR: /data/chroma
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # Snowflake creds
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./app:/opt/airflow/app
+      - ./results:/opt/airflow/results
+      - chroma_data:/data/chroma
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  chroma_data:
+    name: pe_rag_chroma
+  redis_data:
+    name: pe_rag_redis

@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=1.7.1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -sSL https://install.python-poetry.org | python3
+
+ENV PATH="$POETRY_HOME/bin:$PATH"
+
+WORKDIR /app
+
+COPY pyproject.toml poetry.lock* ./
+RUN poetry install --no-interaction --no-ansi
+
+COPY streamlit_app ./streamlit_app
+
+ENV API_BASE_URL=http://localhost:8000
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
+
+CMD ["poetry", "run", "streamlit", "run", "streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
