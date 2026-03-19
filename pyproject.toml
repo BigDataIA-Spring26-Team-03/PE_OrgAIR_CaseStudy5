@@ -37,6 +37,8 @@ rank-bm25 = "^0.2.2"
 chromadb = "^1.5.2"
 sentence-transformers = "^5.2.3"
 onnxruntime = ">=1.16.0,<1.24.0"
+mcp = ">=1.0.0"
+nest-asyncio = ">=1.6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
