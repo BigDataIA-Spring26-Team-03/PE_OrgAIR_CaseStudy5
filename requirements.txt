@@ -14,3 +14,5 @@ python-dotenv
 beautifulsoup4
 apache-airflow==2.10.4
 requests
+mcp>=1.0.0
+nest-asyncio>=1.6.0
