@@ -37,6 +37,25 @@ _EXTERNAL_SIGNAL_SOURCE_MAP = {
     "leadership_signals": "board_proxy_def14a",
 }
 
+def _looks_like_job_posting(content: str) -> bool:
+    """
+    Heuristic: exclude external_signals rows mislabeled as leadership_signals
+    when content is clearly a job title (e.g. "Senior Deep Learning Engineer")
+    rather than an executive profile (e.g. "Jensen Huang — CEO").
+    """
+    if not content or len(content) < 10:
+        return False
+    t = content.strip().lower()
+    # Real leadership: "Name — Title" format
+    if " — " in content or " – " in content:
+        return False
+    # Strong job-posting indicators
+    job_indicators = (
+        "engineer", "developer", "architect", "intern", "new college grad",
+        " - new college grad", "applications engineer", "solutions architect",
+    )
+    return any(ind in t for ind in job_indicators)
+
 
 def _get_indexed_ids() -> set:
     """Return set of evidence IDs already indexed in CS4 (from Redis)."""
@@ -68,6 +87,17 @@ def get_evidence(
     indexed: Optional[bool] = Query(None, description="True=only indexed, False=only unindexed, omit=all"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0),
     since: Optional[datetime] = Query(None, description="Only evidence extracted/created after this datetime"),
+    signal_categories: Optional[str] = Query(
+        None,
+        description="Comma-separated signal categories to filter, e.g. leadership_signals,governance_signals. Omit for all.",
+    ),
+    limit: int = Query(20, ge=1, le=500, description="Max rows to return"),
+    max_content_length: Optional[int] = Query(
+        500,
+        ge=100,
+        le=5000,
+        description="Max characters per content field; truncate beyond this to reduce payload size.",
+    ),
 ) -> List[dict]:
     """
     Fetch CS2-compatible evidence for a company from all Snowflake sources.
@@ -206,8 +236,40 @@ def get_evidence(
     # ------------------------------------------------------------------
     rows = _apply_indexed_filter(rows, indexed)
 
-    logger.info("evidence_fetched", ticker=ticker, count=len(rows), indexed_filter=indexed)
-    return rows
+    # ------------------------------------------------------------------
+    # Filter by signal_categories when requested (e.g. leadership evidence only)
+    # ------------------------------------------------------------------
+    if signal_categories:
+        allowed = {c.strip().lower() for c in signal_categories.split(",") if c.strip()}
+        if allowed:
+            # board_composition in API = governance_signals in DB (board_governance_signals)
+            if "board_composition" in allowed:
+                allowed.add("governance_signals")
+            rows = [r for r in rows if (r.get("signal_category") or "").lower() in allowed]
+            # When filtering for leadership, drop rows mislabeled as leadership but
+            # with job-posting content (noise from external_signals ingestion)
+            if "leadership_signals" in allowed or "board_composition" in allowed:
+                rows = [
+                    r for r in rows
+                    if not (
+                        (r.get("signal_category") or "").lower() == "leadership_signals"
+                        and _looks_like_job_posting(str(r.get("content") or ""))
+                    )
+                ]
+
+    rows = rows[:limit]
+
+    # Truncate content to avoid huge payloads (SEC chunks / evidence can be very long)
+    out = []
+    for r in rows:
+        row = dict(r)
+        c = row.get("content") or ""
+        if isinstance(c, str) and len(c) > max_content_length:
+            row["content"] = c[:max_content_length] + "…"
+        out.append(row)
+
+    logger.info("evidence_fetched", ticker=ticker, count=len(out), indexed_filter=indexed)
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -138,15 +138,18 @@ class SnowflakeService:
                 return "digital_presence"
             if c == "patents":
                 return "innovation_activity"
-            if c == "technology_hiring":   
+            if c == "technology_hiring":
                 return "technology_hiring"
-            if c == "digital_presence":    
+            if c == "digital_presence":
                 return "digital_presence"
-            if c == "innovation_activity": 
+            if c == "innovation_activity":
                 return "innovation_activity"
-            if c == "leadership_signals":  
+            if c == "leadership_signals":
                 return "leadership_signals"
-            return "leadership_signals"
+            # Schema allows only: technology_hiring, innovation_activity, digital_presence, leadership_signals.
+            # Safe default: do NOT map unknown to leadership_signals (was causing job postings to be
+            # mislabeled). Prefer digital_presence for unknown categories.
+            return "digital_presence"
 
         def _ensure_json_string(val: Any) -> str:
             """

@@ -271,3 +271,11 @@ def leadership_profiles_to_aggregated_signal(
         url=None,
         metadata_json=json.dumps(meta, default=str),
     )
+
+
+def scrape_leadership_profiles_mock(company: str) -> List[LeadershipProfile]:
+    """
+    Mock scraper for leadership profiles. Returns empty list.
+    Replace with real implementation (e.g. Wikipedia/Wikidata, board proxy extraction).
+    """
+    return []
