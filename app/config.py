@@ -45,7 +45,10 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = Field(default="")
     LITELLM_BUDGET_USD_PER_DAY: float = Field(default=50.0)
 
-    
+    # ChromaDB persistence (search/RAG)
+    CHROMA_PERSIST_DIR: str = Field(default="./chroma_data")
+    AUTO_INDEX_CHROMA_ON_STARTUP: bool = Field(default=False)
+
     # NEW: USPTO API (for CS2)
     uspto_api_key: Optional[str] = None
     

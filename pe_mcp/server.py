@@ -1,37 +1,25 @@
-# mcp/server.py
+# pe_mcp/server.py
 """
 PE Org-AI-R MCP Server — Universal agent interoperability layer.
 
 This server exposes YOUR CS1-CS4 APIs as MCP tools so that Claude,
 GPT-4, or any MCP-compatible client can call your platform.
 
+Entry point: python -m pe_mcp.server
 """
 from __future__ import annotations
 
 import json
-import os
-import sys
-from datetime import datetime  # always import explicitly
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import logging
 
-import nest_asyncio  # must be called before event-loop code
+import nest_asyncio
+nest_asyncio.apply()
 
-# ---------------------------------------------------------------------------
-# Circular-import guard: our local mcp/ package shadows the installed mcp
-# SDK when the project root is on sys.path.  Temporarily remove it so
-# Python finds site-packages/mcp first, then restore immediately after.
-# ---------------------------------------------------------------------------
-_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_removed: list[tuple[int, str]] = []
-for _idx in range(len(sys.path) - 1, -1, -1):
-    _p = sys.path[_idx]
-    if os.path.abspath(_p) == _project_root or _p in ("", "."):
-        _removed.append((_idx, _p))
-        sys.path.pop(_idx)
-
-from mcp.server import Server           # installed mcp SDK
+# Import installed MCP SDK (no shadow — we live in pe_mcp, not mcp)
+from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     Prompt,
@@ -41,39 +29,19 @@ from mcp.types import (
     Tool,
 )
 
-# Restore sys.path so all other imports (services.*) resolve normally
-for _idx, _p in sorted(_removed):
-    sys.path.insert(_idx, _p)
-del _removed, _project_root, _idx, _p
-
-# ---------------------------------------------------------------------------
-# apply nest_asyncio at import time so this module is safe to import
-# ---------------------------------------------------------------------------
-nest_asyncio.apply()
-
-# ---------------------------------------------------------------------------
-# ALL clients and singletons at module level.
-# ---------------------------------------------------------------------------
-from services.integration.cs2_client import CS2Client, SignalCategory
-from services.integration.cs3_client import CS3Client, Dimension
-from services.cs4_client import CS4Client, cs4_client
-from services.integration.portfolio_data_service import portfolio_data_service
-from services.value_creation.ebitda import ebitda_calculator
-from services.value_creation.gap_analysis import gap_analyzer
+from src.services.integration.cs2_client import CS2Client, SignalCategory
+from src.services.integration.cs3_client import CS3Client, Dimension
+from src.services.cs4_client import CS4Client, cs4_client
+from src.services.integration.portfolio_data_service import portfolio_data_service
+from src.services.value_creation.ebitda import ebitda_calculator
+from src.services.value_creation.gap_analysis import gap_analyzer
 
 logger = logging.getLogger(__name__)
 
-# Instantiate at module level (one instance per server process)
 cs2_client = CS2Client()
 cs3_client = CS3Client()
-# cs4_client already instantiated as a module-level singleton in cs4_client.py
-
-# MCP server instance
 mcp_server = Server("pe-orgair-server")
 
-# ---------------------------------------------------------------------------
-# Dimension → SignalCategory mapping
-# ---------------------------------------------------------------------------
 _DIMENSION_TO_SIGNALS: Dict[str, Optional[List[SignalCategory]]] = {
     "data_infrastructure": [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.DIGITAL_PRESENCE],
     "ai_governance":       [SignalCategory.GOVERNANCE_SIGNALS, SignalCategory.BOARD_COMPOSITION],
@@ -82,13 +50,9 @@ _DIMENSION_TO_SIGNALS: Dict[str, Optional[List[SignalCategory]]] = {
     "leadership":          [SignalCategory.LEADERSHIP_SIGNALS, SignalCategory.BOARD_COMPOSITION],
     "use_case_portfolio":  [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.DIGITAL_PRESENCE],
     "culture":             [SignalCategory.CULTURE_SIGNALS, SignalCategory.GLASSDOOR_REVIEWS],
-    "all":                 None,   # no filter
+    "all":                 None,
 }
 
-
-# ============================================================================
-# Executable functions that agents can call.
-# ============================================================================
 
 @mcp_server.list_tools()
 async def list_tools() -> List[Tool]:
@@ -243,18 +207,10 @@ async def list_tools() -> List[Tool]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> List[TextContent]:
-    """
-    Route tool calls to the appropriate CS1-CS4 API.
-
-    All CS client calls use await — they are async HTTP calls.
-    ebitda_calculator and gap_analyzer are synchronous (no I/O).
-    """
+    """Route tool calls to the appropriate CS1-CS4 API."""
     logger.info("mcp_tool_call: tool=%s args=%s", name, arguments)
 
     try:
-        # ------------------------------------------------------------------
-        # calculate_org_air_score — CS3 scoring engine
-        # ------------------------------------------------------------------
         if name == "calculate_org_air_score":
             assessment = await cs3_client.get_assessment(arguments["company_id"])
             result = {
@@ -265,7 +221,6 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 "hr_score":            assessment.hr_score,
                 "synergy_score":       assessment.synergy_score,
                 "confidence_interval": list(assessment.confidence_interval),
-                # Dimension enum values are lowercase strings ("talent" etc.)
                 "dimension_scores": {
                     d.value: s.score
                     for d, s in assessment.dimension_scores.items()
@@ -273,12 +228,9 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        # ------------------------------------------------------------------
-        # get_company_evidence — CS2 evidence store
-        # ------------------------------------------------------------------
         elif name == "get_company_evidence":
             dim_key = arguments.get("dimension", "all")
-            signal_cats = _DIMENSION_TO_SIGNALS.get(dim_key)  # None → no filter
+            signal_cats = _DIMENSION_TO_SIGNALS.get(dim_key)
 
             evidence = await cs2_client.get_evidence(
                 company_id=arguments["company_id"],
@@ -298,13 +250,10 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             ]
             return [TextContent(type="text", text=json.dumps(items, indent=2))]
 
-        # ------------------------------------------------------------------
-        # generate_justification — CS4 RAG pipeline
-        # ------------------------------------------------------------------
         elif name == "generate_justification":
             justification = await cs4_client.generate_justification(
                 company_id=arguments["company_id"],
-                dimension=arguments["dimension"],   # string → Dimension handled in CS4Client
+                dimension=arguments["dimension"],
             )
             result = {
                 "dimension":          arguments["dimension"],
@@ -328,21 +277,16 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        # ------------------------------------------------------------------
-        # project_ebitda_impact — EBITDA projection model v2.0
-        # ------------------------------------------------------------------
         elif name == "project_ebitda_impact":
             projection = ebitda_calculator.project(
                 company_id=arguments["company_id"],
                 entry_score=arguments["entry_score"],
-                exit_score=arguments["target_score"],    # schema uses "target_score"
+                exit_score=arguments["target_score"],
                 h_r_score=arguments["h_r_score"],
             )
             result = {
                 "company_id":       arguments["company_id"],
                 "delta_air":        float(projection.delta_air),
-                # base_pct is stored as a plain percentage number (e.g. 2.0 = 2%),
-                # NOT a decimal fraction — use :.2f not :.2% (which would give 200%)
                 "scenarios": {
                     "conservative": f"{projection.conservative_pct:.2f}%",
                     "base":         f"{projection.base_pct:.2f}%",
@@ -353,11 +297,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        # ------------------------------------------------------------------
-        # run_gap_analysis — dimension gap + investment roadmap
-        # ------------------------------------------------------------------
         elif name == "run_gap_analysis":
-            # Fetch live scores from CS3 — no hardcoded data
             assessment = await cs3_client.get_assessment(arguments["company_id"])
             current_scores = {
                 d.value: s.score
@@ -370,15 +310,10 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             )
             return [TextContent(type="text", text=json.dumps(analysis, indent=2))]
 
-        # ------------------------------------------------------------------
-        # get_portfolio_summary — Fund-AI-R + per-company breakdown
-        # portfolio_data_service scores DEFAULT_TICKERS concurrently.
-        # ------------------------------------------------------------------
         elif name == "get_portfolio_summary":
             companies = await portfolio_data_service.get_portfolio_view(
                 arguments["fund_id"]
             )
-            # Compute Fund-AI-R as the equal-weighted mean across the portfolio
             fund_air = (
                 round(sum(c.org_air for c in companies) / len(companies), 1)
                 if companies else 0.0
@@ -410,11 +345,6 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
         return [TextContent(type="text", text=f"Error executing '{name}': {exc}")]
 
 
-# ============================================================================
-# RESOURCES 
-# Addressable, read-only data that clients can fetch by URI.
-# ============================================================================
-
 @mcp_server.list_resources()
 async def list_resources() -> List[Resource]:
     """List addressable resources available to MCP clients."""
@@ -442,23 +372,18 @@ async def list_resources() -> List[Resource]:
 async def read_resource(uri: str) -> str:
     """Serve resource content by URI."""
     if uri == "orgair://parameters/v2.0":
-        # Scoring constants documented in the CS3/CS5 spec
         params = {
             "version": "2.0",
-            # V^R weighting
             "alpha": 0.60,
             "beta":  0.12,
-            # EBITDA projection model (ebitda.py uses gamma_0 and gamma_1)
-            "gamma_0": 0.0025,   # quadratic coefficient
-            "gamma_1": 0.05,     # linear coefficient
-            # Additional sensitivity coefficients for extended model
+            "gamma_0": 0.0025,
+            "gamma_1": 0.05,
             "gamma_2": 0.025,
             "gamma_3": 0.01,
         }
         return json.dumps(params, indent=2)
 
     elif uri == "orgair://sectors":
-        # Sector baseline table used for peer-relative scoring
         sectors = {
             "technology": {
                 "h_r_base":        85,
@@ -483,13 +408,8 @@ async def read_resource(uri: str) -> str:
         }
         return json.dumps(sectors, indent=2)
 
-    # Unknown URI — return empty object rather than raising
     return "{}"
 
-
-# ============================================================================
-# PROMPTS  
-# ============================================================================
 
 @mcp_server.list_prompts()
 async def list_prompts() -> List[Prompt]:
@@ -566,13 +486,8 @@ async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
             )
         ]
 
-    # Unknown prompt name — return empty list (graceful degradation)
     return []
 
-
-# ============================================================================
-# Entry point
-# ============================================================================
 
 async def main() -> None:
     """Run the MCP server over stdio transport (default for Claude Desktop)."""

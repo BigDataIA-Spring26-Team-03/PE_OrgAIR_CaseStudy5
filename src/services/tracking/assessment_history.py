@@ -43,8 +43,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
-from services.integration.cs1_client import CS1Client
-from services.integration.cs3_client import CS3Client, CompanyAssessment
+from src.services.integration.cs1_client import CS1Client
+from src.services.integration.cs3_client import CS3Client, CompanyAssessment
 
 logger = logging.getLogger(__name__)
 

@@ -33,11 +33,8 @@ async def lifespan(_app: FastAPI):
     except Exception:
         existing = 0
 
-    auto_index = str(settings.__dict__.get("AUTO_INDEX_CHROMA_ON_STARTUP", "")).lower()
-    if auto_index not in ("1", "true", "yes", "on"):
-        auto_index = str(__import__("os").getenv("AUTO_INDEX_CHROMA_ON_STARTUP", "false")).lower()
-
-    if existing == 0 and auto_index in ("1", "true", "yes", "on"):
+    auto_index_enabled = getattr(settings, "AUTO_INDEX_CHROMA_ON_STARTUP", False)
+    if existing == 0 and auto_index_enabled:
         import structlog
         from datetime import datetime
 

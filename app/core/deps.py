@@ -25,7 +25,8 @@ from src.services.retrieval.hybrid import HybridRetriever  # noqa: E402
 
 @lru_cache
 def get_retriever() -> HybridRetriever:
-    return HybridRetriever(persist_dir=os.getenv("CHROMA_PERSIST_DIR", "./chroma_data"))
+    persist_dir = getattr(settings, "CHROMA_PERSIST_DIR", None) or os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
+    return HybridRetriever(persist_dir=persist_dir)
 
 
 # simple global for routers to import (same pattern as cache above)

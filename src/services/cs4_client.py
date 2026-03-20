@@ -4,8 +4,8 @@ CS4 Client — thin wrapper around JustificationGenerator.
 """
 from __future__ import annotations
 
-from services.integration.cs3_client import Dimension
-from services.justification.generator import JustificationGenerator, ScoreJustification
+from src.services.integration.cs3_client import Dimension
+from src.services.justification.generator import JustificationGenerator, ScoreJustification
 
 
 class CS4Client:
