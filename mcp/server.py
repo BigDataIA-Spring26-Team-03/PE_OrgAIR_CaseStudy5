@@ -9,13 +9,29 @@ GPT-4, or any MCP-compatible client can call your platform.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import datetime  # always import explicitly
 from typing import Any, Dict, List, Optional
 
-import nest_asyncio  # must be called before event-loop code
-import structlog
+import logging
 
-from mcp.server import Server
+import nest_asyncio  # must be called before event-loop code
+
+# ---------------------------------------------------------------------------
+# Circular-import guard: our local mcp/ package shadows the installed mcp
+# SDK when the project root is on sys.path.  Temporarily remove it so
+# Python finds site-packages/mcp first, then restore immediately after.
+# ---------------------------------------------------------------------------
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_removed: list[tuple[int, str]] = []
+for _idx in range(len(sys.path) - 1, -1, -1):
+    _p = sys.path[_idx]
+    if os.path.abspath(_p) == _project_root or _p in ("", "."):
+        _removed.append((_idx, _p))
+        sys.path.pop(_idx)
+
+from mcp.server import Server           # installed mcp SDK
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     Prompt,
@@ -24,6 +40,11 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+
+# Restore sys.path so all other imports (services.*) resolve normally
+for _idx, _p in sorted(_removed):
+    sys.path.insert(_idx, _p)
+del _removed, _project_root, _idx, _p
 
 # ---------------------------------------------------------------------------
 # apply nest_asyncio at import time so this module is safe to import
@@ -40,7 +61,7 @@ from services.integration.portfolio_data_service import portfolio_data_service
 from services.value_creation.ebitda import ebitda_calculator
 from services.value_creation.gap_analysis import gap_analyzer
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 # Instantiate at module level (one instance per server process)
 cs2_client = CS2Client()
@@ -228,7 +249,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
     All CS client calls use await — they are async HTTP calls.
     ebitda_calculator and gap_analyzer are synchronous (no I/O).
     """
-    logger.info("mcp_tool_call", tool=name, args=arguments)
+    logger.info("mcp_tool_call: tool=%s args=%s", name, arguments)
 
     try:
         # ------------------------------------------------------------------
@@ -250,7 +271,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     for d, s in assessment.dimension_scores.items()
                 },
             }
-            return [TextContent(text=json.dumps(result, indent=2))]
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         # ------------------------------------------------------------------
         # get_company_evidence — CS2 evidence store
@@ -275,7 +296,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 }
                 for e in evidence
             ]
-            return [TextContent(text=json.dumps(items, indent=2))]
+            return [TextContent(type="text", text=json.dumps(items, indent=2))]
 
         # ------------------------------------------------------------------
         # generate_justification — CS4 RAG pipeline
@@ -305,7 +326,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 ],
                 "gaps_identified": justification.gaps_identified,
             }
-            return [TextContent(text=json.dumps(result, indent=2))]
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         # ------------------------------------------------------------------
         # project_ebitda_impact — EBITDA projection model v2.0
@@ -330,7 +351,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 "risk_adjusted":    f"{projection.risk_adjusted_pct:.2f}%",
                 "requires_approval": projection.requires_approval,
             }
-            return [TextContent(text=json.dumps(result, indent=2))]
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         # ------------------------------------------------------------------
         # run_gap_analysis — dimension gap + investment roadmap
@@ -347,7 +368,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 current_scores=current_scores,
                 target_org_air=arguments["target_org_air"],
             )
-            return [TextContent(text=json.dumps(analysis, indent=2))]
+            return [TextContent(type="text", text=json.dumps(analysis, indent=2))]
 
         # ------------------------------------------------------------------
         # get_portfolio_summary — Fund-AI-R + per-company breakdown
@@ -379,14 +400,14 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     for c in companies
                 ],
             }
-            return [TextContent(text=json.dumps(result, indent=2))]
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         else:
-            return [TextContent(text=f"Unknown tool: {name}")]
+            return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
     except Exception as exc:
-        logger.error("mcp_tool_error", tool=name, error=str(exc), exc_info=True)
-        return [TextContent(text=f"Error executing '{name}': {exc}")]
+        logger.error("mcp_tool_error: tool=%s error=%s", name, str(exc), exc_info=True)
+        return [TextContent(type="text", text=f"Error executing '{name}': {exc}")]
 
 
 # ============================================================================
@@ -508,7 +529,7 @@ async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
         return [
             PromptMessage(
                 role="user",
-                content=TextContent(text=(
+                content=TextContent(type="text", text=(
                     f"Perform a full Org-AI-R due diligence for **{company_id}**.\n\n"
                     "Follow these steps in order:\n"
                     "1. Call `calculate_org_air_score` to get the current Org-AI-R score "
@@ -529,7 +550,7 @@ async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
         return [
             PromptMessage(
                 role="user",
-                content=TextContent(text=(
+                content=TextContent(type="text", text=(
                     f"Prepare an Investment Committee package for **{company_id}**.\n\n"
                     "Structure:\n"
                     "1. **Org-AI-R Snapshot** — current score, trend, and confidence "
