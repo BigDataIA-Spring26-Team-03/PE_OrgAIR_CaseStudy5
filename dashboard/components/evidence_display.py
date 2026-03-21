@@ -229,5 +229,5 @@ def render_evidence_summary_table(
         bg = LEVEL_COLORS.get(lvl, "#ffffff")
         return f"background-color:{bg};color:white;"
 
-    styled = df.style.applymap(_color_level, subset=["Level"])
+    styled = df.style.map(_color_level, subset=["Level"])
     st.dataframe(styled, use_container_width=True, hide_index=True)

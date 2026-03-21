@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 from langchain_openai import ChatOpenAI
@@ -60,7 +60,7 @@ class ToolCaller:
             a = await cs3.get_assessment(args["company_id"])
         result = {
             "company_id": args["company_id"],
-            "assessed_at": datetime.utcnow().isoformat(),
+            "assessed_at": datetime.now(timezone.utc).isoformat(),
             "org_air": a.org_air_score,
             "vr_score": a.vr_score,
             "hr_score": a.hr_score,
@@ -215,7 +215,7 @@ class SECAnalysisAgent:
                     "role": "assistant",
                     "content": f"SEC analysis complete for {company_id}. Found {len(findings)} evidence items.",
                     "agent_name": "sec_analyst",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         }
@@ -265,7 +265,7 @@ class ScoringAgent:
                     "content": f"Scoring complete: Org-AI-R = {org_air:.1f}"
                     + (" [REQUIRES APPROVAL]" if requires_approval else ""),
                     "agent_name": "scorer",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         }
@@ -306,7 +306,7 @@ class EvidenceAgent:
                     "role": "assistant",
                     "content": f"Generated justifications for {len(justifications)} dimensions.",
                     "agent_name": "evidence_agent",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         }
@@ -358,7 +358,7 @@ class ValueCreationAgent:
                     "role": "assistant",
                     "content": f"Value creation plan complete. Projected EBITDA impact: {projected_ebitda_pct:.1f}%",
                     "agent_name": "value_creator",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         }

@@ -638,6 +638,7 @@ class ScoringIntegrationService:
         dimension_scores: Dict[str, DimensionScore],
         cs2_data: Dict[str, Any],
         culture_data: Dict[str, Any],
+        evidence_scores: Optional[List[EvidenceScore]] = None,
     ) -> Dict[str, Any]:
         """
         Full scoring chain:
@@ -714,20 +715,19 @@ class ScoringIntegrationService:
         logger.info("org_air_calculated", ticker=ticker, final_score=final_score)
 
         # --- Step 7: Confidence ---
-        total_evidence = sum(
-            ds.evidence_count
-            for ds in dimension_scores.values()
-            if hasattr(ds, "evidence_count")
-        )
-        # Count contributing sources as evidence count
-        evidence_count = max(
-            total_evidence,
-            sum(
-                len(ds.contributing_sources)
-                for ds in dimension_scores.values()
-            ),
-        )
-        evidence_count = max(evidence_count, 1)
+        # Use actual evidence item count (chunks, signals, reviews) — not double-counted
+        # contributing_sources, which inflates when the same source maps to multiple dimensions.
+        if evidence_scores:
+            evidence_count = max(
+                1,
+                sum(e.evidence_count for e in evidence_scores),
+            )
+        else:
+            # Fallback: count unique source mentions across dimensions (can double-count)
+            evidence_count = max(
+                1,
+                sum(len(ds.contributing_sources) for ds in dimension_scores.values()),
+            )
 
         ci = self.confidence_calc.calculate(
             score=final_score,
@@ -967,6 +967,7 @@ class ScoringIntegrationService:
             dimension_scores=dimension_scores,
             cs2_data=cs2_data,
             culture_data=culture_data,
+            evidence_scores=evidence_scores,
         )
 
         # Phase 4: Persistence

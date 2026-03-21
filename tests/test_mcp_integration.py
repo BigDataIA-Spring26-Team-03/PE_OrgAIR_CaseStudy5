@@ -168,7 +168,7 @@ def test_fund_air_empty_portfolio_raises():
 @pytest.mark.asyncio
 async def test_assessment_history_cache_and_trend():
     """Manually seed cache + calculate_trend should return correct deltas."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from decimal import Decimal
     from src.services.tracking.assessment_history import (
         AssessmentHistoryService, AssessmentSnapshot,
@@ -176,7 +176,7 @@ async def test_assessment_history_cache_and_trend():
 
     svc = AssessmentHistoryService(cs1_client=None, cs3_client=None)
 
-    old_ts = datetime.utcnow() - timedelta(days=100)
+    old_ts = datetime.now(timezone.utc) - timedelta(days=100)
 
     snap1 = AssessmentSnapshot(
         company_id="NVDA", timestamp=old_ts,
@@ -186,7 +186,7 @@ async def test_assessment_history_cache_and_trend():
         evidence_count=5, assessor_id="test", assessment_type="full",
     )
     snap2 = AssessmentSnapshot(
-        company_id="NVDA", timestamp=datetime.utcnow(),
+        company_id="NVDA", timestamp=datetime.now(timezone.utc),
         org_air=Decimal("62.0"), vr_score=Decimal("57.0"),
         hr_score=Decimal("67.0"), synergy_score=Decimal("4.0"),
         dimension_scores={}, confidence_interval=(57.0, 67.0),

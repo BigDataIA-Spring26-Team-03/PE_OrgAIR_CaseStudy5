@@ -13,7 +13,10 @@ import os
 import sys
 
 import nest_asyncio
-nest_asyncio.apply()
+try:
+    nest_asyncio.apply()
+except ValueError:
+    pass  # uvloop is already running, that's fine
 
 import pandas as pd
 import plotly.express as px
@@ -24,8 +27,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from src.services.integration.portfolio_data_service import portfolio_data_service
 from src.services.analytics.fund_air import fund_air_calculator
-from dashboard.components.evidence_display import render_evidence_summary_table
-
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
@@ -83,6 +84,10 @@ bust_key = 1 if refresh else 0
 
 try:
     portfolio_df, companies = load_portfolio(fund_id, bust_key)
+    if not companies:
+        st.error("❌ No portfolio companies loaded. Check Snowflake/API connectivity.")
+        st.info("Ensure the FastAPI scoring service is running and Snowflake is configured.")
+        st.stop()
     st.sidebar.success(f"✅ Loaded {len(portfolio_df)} companies from CS1-CS4")
 except Exception as e:
     st.error(f"❌ Failed to connect to CS1-CS4: {e}")
@@ -139,7 +144,7 @@ with col_left:
         x=60, line_dash="dash", line_color="gray",
         annotation_text="V^R threshold", annotation_position="top",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 with col_right:
     # Quartile distribution
@@ -157,7 +162,7 @@ with col_right:
         title="Sector-Relative Quartile Distribution",
         height=420,
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
 
 # ---------------------------------------------------------------------------
 # Org-AI-R bar chart
@@ -176,7 +181,7 @@ fig3 = px.bar(
 fig3.update_traces(texttemplate="%{text:.1f}", textposition="outside")
 fig3.add_hline(y=60, line_dash="dot", line_color="gray",
                annotation_text="Minimum threshold")
-st.plotly_chart(fig3, use_container_width=True)
+st.plotly_chart(fig3, width="stretch")
 
 # ---------------------------------------------------------------------------
 # Delta since entry
@@ -191,7 +196,7 @@ fig4 = px.bar(
     height=320,
 )
 fig4.add_hline(y=0, line_color="gray")
-st.plotly_chart(fig4, use_container_width=True)
+st.plotly_chart(fig4, width="stretch")
 
 # ---------------------------------------------------------------------------
 # Portfolio table with colour gradient

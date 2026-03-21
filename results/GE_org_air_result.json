@@ -1,18 +1,18 @@
 {
   "ticker": "GE",
-  "company_name": "General Electric Company",
-  "sector": "Industrials",
-  "assessment_id": "16dadd95-76ea-4ceb-afa8-d224a695e991",
-  "scored_at": "2026-02-20T18:10:35.410572+00:00",
-  "final_score": 47.267516,
-  "vr_score": 34.73394873,
-  "hr_score": 74.98944,
-  "synergy_score": 21.097862,
-  "position_factor": 0.2768068,
+  "company_name": "General Electric",
+  "sector": "manufacturing",
+  "assessment_id": null,
+  "scored_at": "2026-03-21T22:54:08.981770+00:00",
+  "final_score": 47.0175744,
+  "vr_score": 34.67008876,
+  "hr_score": 74.4408,
+  "synergy_score": 20.90504684,
+  "position_factor": 0.2260412,
   "talent_concentration": 0.2499,
   "confidence": {
-    "ci_lower": 39.28735948,
-    "ci_upper": 55.24764052,
+    "ci_lower": 39.03745948,
+    "ci_upper": 54.99774052,
     "sem": 4.071500267,
     "reliability": 0.9154228856,
     "evidence_count": 23
@@ -20,7 +20,7 @@
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 35.64208791208791,
+      "score": 35.64208792,
       "contributing_sources": [
         "Item 1A (Risk)",
         "Item 7 (MD&A)",
@@ -29,11 +29,11 @@
         "technology_hiring"
       ],
       "total_weight": 1.3,
-      "confidence": 0.998255189625
+      "confidence": 0.9982551896
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 41.38591836734694,
+      "score": 41.26163265,
       "contributing_sources": [
         "Item 1A (Risk)",
         "board_composition",
@@ -44,7 +44,7 @@
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 23.54619047619048,
+      "score": 23.54619048,
       "contributing_sources": [
         "Item 1 (Business)",
         "digital_presence",
@@ -66,7 +66,7 @@
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 43.79333333333334,
+      "score": 43.44533333,
       "contributing_sources": [
         "Item 7 (MD&A)",
         "board_composition",
@@ -78,7 +78,7 @@
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 53.042735042735046,
+      "score": 53.04273505,
       "contributing_sources": [
         "Item 1 (Business)",
         "Item 7 (MD&A)",
@@ -89,7 +89,7 @@
     },
     "culture": {
       "dimension": "culture",
-      "score": 46.72157894736842,
+      "score": 46.58421053,
       "contributing_sources": [
         "glassdoor_reviews",
         "leadership_signals"

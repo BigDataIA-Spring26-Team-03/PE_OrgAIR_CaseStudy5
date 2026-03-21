@@ -10,7 +10,7 @@ Entry point: python -m pe_mcp.server
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import logging
@@ -215,7 +215,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             assessment = await cs3_client.get_assessment(arguments["company_id"])
             result = {
                 "company_id":          arguments["company_id"],
-                "assessed_at":         datetime.utcnow().isoformat(),
+                "assessed_at":         datetime.now(timezone.utc).isoformat(),
                 "org_air":             assessment.org_air_score,
                 "vr_score":            assessment.vr_score,
                 "hr_score":            assessment.hr_score,

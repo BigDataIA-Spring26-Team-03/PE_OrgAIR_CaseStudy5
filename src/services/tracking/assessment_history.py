@@ -39,7 +39,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -428,7 +428,7 @@ class AssessmentHistoryService:
 
         snapshot = AssessmentSnapshot(
             company_id=company_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             org_air=Decimal(str(assessment.org_air_score)),
             vr_score=Decimal(str(assessment.vr_score)),
             hr_score=Decimal(str(assessment.hr_score)),
@@ -472,7 +472,7 @@ class AssessmentHistoryService:
         company_id: Company ticker.
         days:       Lookback window in calendar days (default: 1 year).
         """
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         if company_id not in self._cache:
             # Cold-start: attempt Snowflake read to repopulate cache
@@ -530,7 +530,7 @@ class AssessmentHistoryService:
         # Walk backwards through history to find 30-day and 90-day anchors.
         # Walking newest->oldest means the first match at >=N days is the most
         # recent anchor, so deltas represent "movement in the last N days".
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         delta_30d: Optional[float] = None
         delta_90d: Optional[float] = None
 
