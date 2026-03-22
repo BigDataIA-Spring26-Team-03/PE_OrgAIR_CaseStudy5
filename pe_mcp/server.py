@@ -9,7 +9,9 @@ Entry point: python -m pe_mcp.server
 """
 from __future__ import annotations
 
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -35,11 +37,13 @@ from src.services.cs4_client import CS4Client, cs4_client
 from src.services.integration.portfolio_data_service import portfolio_data_service
 from src.services.value_creation.ebitda import ebitda_calculator
 from src.services.value_creation.gap_analysis import gap_analyzer
+from src.services.on_demand_scoring import OnDemandScoringService
 
 logger = logging.getLogger(__name__)
 
 cs2_client = CS2Client()
 cs3_client = CS3Client()
+on_demand = OnDemandScoringService()
 mcp_server = Server("pe-orgair-server")
 
 _DIMENSION_TO_SIGNALS: Dict[str, Optional[List[SignalCategory]]] = {
@@ -202,6 +206,27 @@ async def list_tools() -> List[Tool]:
                 "required": ["fund_id"],
             },
         ),
+        Tool(
+            name="refresh_company_data",
+            description=(
+                "Force-refresh all evidence and re-score a company from scratch. "
+                "Triggers full 7-source evidence collection (SEC filings, job postings, "
+                "patents, Glassdoor reviews, board composition, leadership signals, "
+                "and tech stack) then re-runs the complete Org-AI-R scoring pipeline. "
+                "Use after major company events or to score a new ticker not yet in "
+                "the system. Returns the freshly computed assessment."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "company_id": {
+                        "type": "string",
+                        "description": "Company ticker symbol, e.g. 'AAPL'.",
+                    },
+                },
+                "required": ["company_id"],
+            },
+        ),
     ]
 
 
@@ -212,9 +237,20 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
 
     try:
         if name == "calculate_org_air_score":
-            assessment = await cs3_client.get_assessment(arguments["company_id"])
+            company_id = arguments["company_id"].upper().strip()
+            freshly_scored = False
+            try:
+                assessment = await cs3_client.get_assessment(company_id)
+            except Exception:
+                # Cache miss or 404 — run full evidence collection + scoring pipeline
+                logger.info(
+                    "calculate_org_air_score: no cached assessment for %s, "
+                    "triggering on-demand pipeline", company_id
+                )
+                assessment = await on_demand.get_or_score_company(company_id)
+                freshly_scored = True
             result = {
-                "company_id":          arguments["company_id"],
+                "company_id":          company_id,
                 "assessed_at":         datetime.now(timezone.utc).isoformat(),
                 "org_air":             assessment.org_air_score,
                 "vr_score":            assessment.vr_score,
@@ -225,6 +261,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     d.value: s.score
                     for d, s in assessment.dimension_scores.items()
                 },
+                "freshly_scored": freshly_scored,
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -251,8 +288,18 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=json.dumps(items, indent=2))]
 
         elif name == "generate_justification":
+            company_id = arguments["company_id"].upper().strip()
+            # Ensure CS3 has a cached assessment before CS4 calls cs3 internally
+            try:
+                await cs3_client.get_assessment(company_id)
+            except Exception:
+                logger.info(
+                    "generate_justification: pre-warming CS3 cache for %s "
+                    "via on-demand pipeline", company_id
+                )
+                await on_demand.get_or_score_company(company_id)
             justification = await cs4_client.generate_justification(
-                company_id=arguments["company_id"],
+                company_id=company_id,
                 dimension=arguments["dimension"],
             )
             result = {
@@ -298,17 +345,56 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         elif name == "run_gap_analysis":
-            assessment = await cs3_client.get_assessment(arguments["company_id"])
+            company_id = arguments["company_id"].upper().strip()
+            freshly_scored = False
+            try:
+                assessment = await cs3_client.get_assessment(company_id)
+            except Exception:
+                logger.info(
+                    "run_gap_analysis: no cached assessment for %s, "
+                    "triggering on-demand pipeline", company_id
+                )
+                assessment = await on_demand.get_or_score_company(company_id)
+                freshly_scored = True
             current_scores = {
                 d.value: s.score
                 for d, s in assessment.dimension_scores.items()
             }
             analysis = gap_analyzer.analyze(
-                company_id=arguments["company_id"],
+                company_id=company_id,
                 current_scores=current_scores,
                 target_org_air=arguments["target_org_air"],
             )
+            if freshly_scored:
+                analysis["note"] = (
+                    f"{company_id} was not previously scored. "
+                    "Full evidence pipeline was run to compute this analysis."
+                )
             return [TextContent(type="text", text=json.dumps(analysis, indent=2))]
+
+        elif name == "refresh_company_data":
+            company_id = arguments["company_id"].upper().strip()
+            logger.info("refresh_company_data: force-refresh requested for %s", company_id)
+            assessment = await on_demand.get_or_score_company(company_id, force_refresh=True)
+            result = {
+                "company_id":    company_id,
+                "refreshed_at":  datetime.now(timezone.utc).isoformat(),
+                "org_air":       assessment.org_air_score,
+                "vr_score":      assessment.vr_score,
+                "hr_score":      assessment.hr_score,
+                "synergy_score": assessment.synergy_score,
+                "confidence_interval": list(assessment.confidence_interval),
+                "dimension_scores": {
+                    d.value: s.score
+                    for d, s in assessment.dimension_scores.items()
+                },
+                "status":  "refreshed",
+                "message": (
+                    f"Full 7-source evidence collection and scoring pipeline "
+                    f"completed for {company_id}."
+                ),
+            }
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         elif name == "get_portfolio_summary":
             companies = await portfolio_data_service.get_portfolio_view(

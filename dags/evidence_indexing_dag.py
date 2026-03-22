@@ -57,7 +57,12 @@ def evidence_indexing_pipeline():
             tickers = [r["ticker"] for r in rows]
             log.info("Loaded %d tickers from Snowflake", len(tickers))
         except Exception as exc:
-            log.warning("Snowflake ticker load failed (%s), using fallback", exc)
+            log.error(
+                "Snowflake ticker load FAILED (%s). "
+                "Evidence indexing will cover only the hardcoded fallback of %d tickers: %s. "
+                "Fix Snowflake connection to index evidence for all companies.",
+                exc, len(_FALLBACK_COMPANIES), _FALLBACK_COMPANIES
+            )
             tickers = _FALLBACK_COMPANIES
 
         async def _fetch():

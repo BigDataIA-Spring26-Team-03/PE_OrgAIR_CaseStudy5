@@ -1909,11 +1909,12 @@ elif page == "🔍 Evidence Search":
 
     seed_col1, seed_col2 = st.columns([2, 1])
     with seed_col1:
-        seed_ticker = st.selectbox(
-            "Select Company to Seed",
-            ["NVDA", "JPM", "WMT", "GE", "DG"],
+        seed_ticker = st.text_input(
+            "Company Ticker to Seed",
+            value="NVDA",
+            placeholder="e.g. NVDA, AAPL, TSLA",
             key="seed_ticker"
-        )
+        ).strip().upper()
     with seed_col2:
         st.markdown("<br>", unsafe_allow_html=True)
         seed_btn = st.button("🌱 Seed Evidence", type="primary", use_container_width=True)
@@ -1947,10 +1948,11 @@ elif page == "🔍 Evidence Search":
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            company_filter = st.selectbox(
-                "Company",
-                ["All", "NVDA", "JPM", "WMT", "GE", "DG"]
-            )
+            company_filter = st.text_input(
+                "Company Filter (ticker or 'All')",
+                value="All",
+                placeholder="e.g. NVDA or All",
+            ).strip().upper()
 
         with col2:
             dimension_filter = st.selectbox(
@@ -2116,11 +2118,12 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
-            ticker = st.selectbox(
+            ticker = st.text_input(
                 "Company Ticker",
-                ["NVDA", "JPM", "WMT", "GE", "DG"],
+                value="NVDA",
+                placeholder="e.g. AAPL, MSFT, TSLA",
                 key="just_ticker"
-            )
+            ).strip().upper()
 
         with col2:
             dimension = st.selectbox(
@@ -2232,11 +2235,12 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
-            ic_ticker = st.selectbox(
+            ic_ticker = st.text_input(
                 "Company Ticker",
-                ["NVDA", "JPM", "WMT", "GE", "DG"],
+                value="NVDA",
+                placeholder="e.g. AAPL, MSFT, TSLA",
                 key="ic_ticker"
-            )
+            ).strip().upper()
 
         with col2:
             focus = st.multiselect(
@@ -2357,8 +2361,6 @@ elif page == "🗒️ Analyst Notes":
         "use_case_portfolio",
         "culture",
     ]
-    TICKERS = ["NVDA", "JPM", "WMT", "GE", "DG"]
-
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🎤 Interview",
         "🔍 DD Finding",
@@ -2376,7 +2378,7 @@ elif page == "🗒️ Analyst Notes":
 
         col1, col2 = st.columns(2)
         with col1:
-            iv_ticker = st.selectbox("Company Ticker", TICKERS, key="iv_ticker")
+            iv_ticker = st.text_input("Company Ticker", value="NVDA", placeholder="e.g. AAPL, MSFT", key="iv_ticker").strip().upper()
             iv_interviewee = st.text_input("Interviewee Name", placeholder="e.g. Jensen Huang", key="iv_interviewee")
             iv_title = st.text_input("Interviewee Title", placeholder="e.g. CEO", key="iv_title")
         with col2:
@@ -2433,7 +2435,7 @@ elif page == "🗒️ Analyst Notes":
 
         col1, col2 = st.columns(2)
         with col1:
-            dd_ticker = st.selectbox("Company Ticker", TICKERS, key="dd_ticker")
+            dd_ticker = st.text_input("Company Ticker", value="NVDA", placeholder="e.g. AAPL, MSFT", key="dd_ticker").strip().upper()
             dd_title = st.text_input("Finding Title", placeholder="e.g. No data quality monitoring", key="dd_title")
             dd_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="dd_assessor")
         with col2:
@@ -2489,7 +2491,7 @@ elif page == "🗒️ Analyst Notes":
 
         col1, col2 = st.columns(2)
         with col1:
-            dr_ticker = st.selectbox("Company Ticker", TICKERS, key="dr_ticker")
+            dr_ticker = st.text_input("Company Ticker", value="NVDA", placeholder="e.g. AAPL, MSFT", key="dr_ticker").strip().upper()
             dr_doc_name = st.text_input("Document Name", placeholder="e.g. AI_Roadmap_2025.pdf", key="dr_doc_name")
             dr_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="dr_assessor")
         with col2:
@@ -2540,7 +2542,7 @@ elif page == "🗒️ Analyst Notes":
 
         col1, col2 = st.columns(2)
         with col1:
-            mm_ticker = st.selectbox("Company Ticker", TICKERS, key="mm_ticker")
+            mm_ticker = st.text_input("Company Ticker", value="NVDA", placeholder="e.g. AAPL, MSFT", key="mm_ticker").strip().upper()
             mm_title = st.text_input("Meeting Title", placeholder="e.g. Q1 2026 Roadshow - NVDA", key="mm_title")
             mm_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="mm_assessor")
         with col2:
@@ -2595,7 +2597,7 @@ elif page == "🗒️ Analyst Notes":
 
         col1, col2 = st.columns(2)
         with col1:
-            sv_ticker = st.selectbox("Company Ticker", TICKERS, key="sv_ticker")
+            sv_ticker = st.text_input("Company Ticker", value="NVDA", placeholder="e.g. AAPL, MSFT", key="sv_ticker").strip().upper()
             sv_location = st.text_input("Location", placeholder="e.g. NVIDIA HQ, Santa Clara", key="sv_location")
             sv_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="sv_assessor")
         with col2:

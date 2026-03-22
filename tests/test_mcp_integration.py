@@ -285,3 +285,59 @@ async def test_hitl_does_not_trigger_for_normal_scores():
 
     assert result["requires_approval"] is False
     assert result["approval_status"] is None
+
+
+# ---------------------------------------------------------------------------
+# On-demand scoring — unknown ticker triggers pipeline; known ticker skips it
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_unknown_ticker_triggers_pipeline():
+    """
+    When CS3 returns 404/exception for an unknown ticker,
+    calculate_org_air_score must call on_demand.get_or_score_company.
+    """
+    import pe_mcp.server as srv
+
+    with patch.object(
+        srv.cs3_client, "get_assessment", new_callable=AsyncMock
+    ) as mock_cs3, patch.object(
+        srv.on_demand, "get_or_score_company", new_callable=AsyncMock
+    ) as mock_ods:
+        mock_cs3.side_effect = Exception("HTTP 404: ticker AAPL not found")
+        mock_ods.return_value = _make_assessment(61.0)
+
+        result = await srv.call_tool("calculate_org_air_score", {"company_id": "AAPL"})
+
+    # on_demand must have been called because CS3 raised
+    mock_ods.assert_called_once_with("AAPL")
+
+    import json
+    data = json.loads(result[0].text)
+    assert data["org_air"] == 61.0
+    assert data["freshly_scored"] is True
+
+
+@pytest.mark.asyncio
+async def test_known_ticker_skips_pipeline():
+    """
+    When CS3 returns a cached assessment, on_demand must NOT be called.
+    """
+    import pe_mcp.server as srv
+
+    with patch.object(
+        srv.cs3_client, "get_assessment", new_callable=AsyncMock
+    ) as mock_cs3, patch.object(
+        srv.on_demand, "get_or_score_company", new_callable=AsyncMock
+    ) as mock_ods:
+        mock_cs3.return_value = _make_assessment(72.5)
+
+        result = await srv.call_tool("calculate_org_air_score", {"company_id": "NVDA"})
+
+    # on_demand must NOT have been called — CS3 cache was sufficient
+    mock_ods.assert_not_called()
+
+    import json
+    data = json.loads(result[0].text)
+    assert data["org_air"] == 72.5
+    assert data["freshly_scored"] is False

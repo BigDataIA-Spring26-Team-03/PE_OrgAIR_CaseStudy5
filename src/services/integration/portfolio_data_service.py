@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 # API base for fetching company list (same as ScoringIntegrationService default)
 _API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
-# Sector hints for score_company fallback when ticker not in API response
+# Cosmetic sector hints used only when score_company() requires a sector argument
+# and the API response doesn't include one. This does NOT restrict which companies
+# No ticker is rejected or blocked by this dict.
 _SECTOR_HINTS: Dict[str, str] = {
     "NVDA": "technology", "JPM": "financial_services", "WMT": "retail",
     "GE": "manufacturing", "DG": "retail", "MSFT": "technology", "AAPL": "technology",
