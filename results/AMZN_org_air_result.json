@@ -1,0 +1,96 @@
+{
+  "ticker": "AMZN",
+  "company_name": "AMZN",
+  "sector": "technology",
+  "assessment_id": null,
+  "scored_at": "2026-03-22T22:19:07.938224+00:00",
+  "final_score": 59.9632384,
+  "vr_score": 50.907698671375,
+  "hr_score": 77.068875,
+  "synergy_score": 49.6310155727045,
+  "position_factor": 0.1838524,
+  "talent_concentration": 0.7,
+  "confidence": {
+    "ci_lower": 57.2192,
+    "ci_upper": 62.7072,
+    "sem": 1.4,
+    "reliability": 0.99,
+    "evidence_count": 457
+  },
+  "dimension_scores": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 65.0,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "Item 7 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 0.6,
+      "confidence": 0.993301
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 43.59285714285714,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "board_composition",
+        "leadership_signals"
+      ],
+      "total_weight": 1.75,
+      "confidence": 0.993301
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 72.0,
+      "contributing_sources": [
+        "innovation_activity"
+      ],
+      "total_weight": 0.5,
+      "confidence": 0.76
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 50.0,
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 56.02142857142857,
+      "contributing_sources": [
+        "Item 7 (MD&A)",
+        "board_composition",
+        "leadership_signals"
+      ],
+      "total_weight": 1.4,
+      "confidence": 0.9911065
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 76.0,
+      "contributing_sources": [
+        "Item 7 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 0.6,
+      "confidence": 0.9538
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 41.55,
+      "contributing_sources": [
+        "leadership_signals"
+      ],
+      "total_weight": 0.15,
+      "confidence": 0.76
+    }
+  },
+  "scoring_parameters": {
+    "alpha": 0.6,
+    "beta": 0.12,
+    "lambda": 0.25,
+    "delta": 0.15
+  }
+}

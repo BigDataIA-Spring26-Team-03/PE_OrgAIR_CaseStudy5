@@ -1,0 +1,21 @@
+{
+  "ticker": "DPA",
+  "company_id": "d1c21981-a6f8-4a76-9ed2-af25b61f3929",
+  "signal_id": "19637b13-8f89-4ef6-a501-798a633982f0",
+  "collected_at": "2026-03-22T18:18:14.633919",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

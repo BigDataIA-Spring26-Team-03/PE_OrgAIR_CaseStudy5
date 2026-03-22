@@ -53,31 +53,38 @@ class PortfolioDataService:
         try:
             resp = requests.get(
                 f"{_API_BASE}/api/v1/companies",
-                params={"limit": 200, "offset": 0},
+                params={"limit": 500, "offset": 0},
                 timeout=30,
             )
             resp.raise_for_status()
-            companies = resp.json()
+            data = resp.json()
+            companies = data if isinstance(data, list) else data.get("items", data.get("results", []))
             tickers = [
                 str(c.get("ticker", "")).strip().upper()
-                for c in companies
+                for c in (companies or [])
                 if c.get("ticker")
             ]
             if tickers:
-                logger.info("portfolio_tickers_from_api", count=len(tickers), tickers=tickers[:10])
+                logger.info("portfolio_tickers_from_api count=%d tickers=%s", len(tickers), tickers[:10])
                 return tickers
         except Exception as exc:
-            logger.warning("portfolio_tickers_api_failed", error=str(exc))
+            logger.warning("portfolio_tickers_api_failed: %s", exc)
 
         fallback = os.getenv("PORTFOLIO_TICKERS", "").strip()
         if fallback:
             tickers = [t.strip().upper() for t in fallback.split(",") if t.strip()]
             if tickers:
-                logger.info("portfolio_tickers_from_env", count=len(tickers))
+                logger.info("portfolio_tickers_from_env count=%d", len(tickers))
                 return tickers
 
-        logger.warning("portfolio_tickers_empty", hint="Add companies via API or set PORTFOLIO_TICKERS")
-        return []
+        # Demo fallback when API and env are empty (e.g. fresh Snowflake, FastAPI down)
+        demo_tickers = ["NVDA", "JPM", "WMT", "GE", "DG"]
+        logger.warning(
+            "portfolio_tickers_empty — using demo fallback %s. "
+            "Add companies via API or set PORTFOLIO_TICKERS for production.",
+            demo_tickers,
+        )
+        return demo_tickers
 
     async def get_portfolio_view(self, fund_id: str) -> List[PortfolioCompanyView]:
         """

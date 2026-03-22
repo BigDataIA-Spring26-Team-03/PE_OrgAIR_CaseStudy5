@@ -1,0 +1,21 @@
+{
+  "ticker": "HCA",
+  "company_id": "f7d9ca7f-f1c6-4195-967f-d4070f36c80d",
+  "signal_id": "542a2501-4985-461e-9269-3200e33cae83",
+  "collected_at": "2026-03-22T18:20:34.946535",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

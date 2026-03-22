@@ -1,0 +1,21 @@
+{
+  "ticker": "CAT",
+  "company_id": "020af5ea-031b-44aa-a45b-59d5986ea9ed",
+  "signal_id": "579542b5-3ac3-4ee5-bace-ed38d5af9504",
+  "collected_at": "2026-03-22T18:20:40.391203",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

@@ -1,0 +1,21 @@
+{
+  "ticker": "PAYX",
+  "company_id": "f289ea15-6a99-4aa0-a250-e0d7ca2fc76a",
+  "signal_id": "136bd96f-ee98-4df1-9185-fc321fbd10c0",
+  "collected_at": "2026-03-22T18:20:14.089378",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

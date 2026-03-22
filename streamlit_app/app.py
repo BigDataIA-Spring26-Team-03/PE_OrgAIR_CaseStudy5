@@ -1,12 +1,21 @@
 # streamlit_app/app.py
 """
 PE Org-AI-R Platform - Complete Dashboard
-CS1: Platform Foundation + CS2: Evidence Collection
+CS1: Platform Foundation + CS2: Evidence Collection + CS5: Portfolio Intelligence
 
 Features:
 - CS1: Companies, Assessments, Dimension Scores
 - CS2: Signal Collection, Patent Analytics, SEC Documents
+- CS5: Portfolio Intelligence (Fund-AI-R, V^R vs H^R, evidence panel)
 """
+
+import os
+import sys
+
+# Add project root for src. and dashboard imports
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 import streamlit as st
 import pandas as pd
@@ -84,6 +93,7 @@ page = st.sidebar.radio(
     "📍 Navigation",
     [
         "🏠 Dashboard",
+        "📊 Portfolio Intelligence (CS5)",
         "🏢 Companies",
         "📋 Assessments",
         "📊 Dimension Scores",
@@ -102,6 +112,7 @@ page = st.sidebar.radio(
 st.sidebar.markdown("---")
 st.sidebar.caption("**Case Study 1:** Platform Foundation ✅")
 st.sidebar.caption("**Case Study 2:** Evidence Collection ✅")
+st.sidebar.caption("**Case Study 5:** Portfolio Intelligence ✅")
 st.sidebar.caption("Built with FastAPI + Snowflake + USPTO")
 
 # ============================================
@@ -228,6 +239,31 @@ if page == "🏠 Dashboard":
     except Exception as e:
         st.error(f"Error loading dashboard: {e}")
         st.info("Make sure FastAPI is running: `poetry run uvicorn app.main:create_app --factory --reload`")
+
+# ============================================
+# 📊 PORTFOLIO INTELLIGENCE (CS5)
+# ============================================
+elif page == "📊 Portfolio Intelligence (CS5)":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Portfolio Options**")
+    fund_id = st.sidebar.text_input("Fund ID", value="growth_fund_v", key="portfolio_fund_id")
+    show_evidence = st.sidebar.checkbox("Show Evidence Panel", value=False, key="portfolio_show_evidence")
+    refresh = st.sidebar.button("🔄 Refresh Portfolio", key="portfolio_refresh")
+    bust_key = 1 if refresh else 0
+    st.sidebar.markdown("---")
+
+    try:
+        from dashboard.pages.portfolio_intelligence import run as run_portfolio_intelligence
+        run_portfolio_intelligence(fund_id, show_evidence, bust_key)
+    except Exception as e:
+        st.error(f"Failed to load Portfolio Intelligence: {e}")
+        st.info(
+            "Ensure FastAPI is running and Snowflake is configured. "
+            "Portfolio data comes from CS1-CS4 via PortfolioDataService."
+        )
+        import traceback
+        with st.expander("Details"):
+            st.code(traceback.format_exc())
 
 # ============================================
 # 🏢 COMPANIES (CS1)

@@ -1,101 +1,92 @@
 {
-  "ticker": "JPM",
-  "company_name": "JPMorgan Chase",
-  "sector": "financial_services",
+  "ticker": "JNJ",
+  "company_name": "JNJ",
+  "sector": "technology",
   "assessment_id": null,
-  "scored_at": "2026-03-22T22:19:56.374085+00:00",
-  "final_score": 67.3957952,
-  "vr_score": 57.885145433421,
-  "hr_score": 85.2152,
-  "synergy_score": 56.972573814156,
-  "position_factor": 0.4346212,
-  "talent_concentration": 0.2673,
+  "scored_at": "2026-03-22T22:19:11.064268+00:00",
+  "final_score": 60.1086072,
+  "vr_score": 51.43842614375625,
+  "hr_score": 76.611,
+  "synergy_score": 49.85045286936,
+  "position_factor": 0.1431808,
+  "talent_concentration": 0.7,
   "confidence": {
-    "ci_lower": 64.6518,
-    "ci_upper": 70.1398,
+    "ci_lower": 57.3646,
+    "ci_upper": 62.8526,
     "sem": 1.4,
     "reliability": 0.99,
-    "evidence_count": 1838
+    "evidence_count": 316
   },
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 47.20065934065934,
+      "score": 72.48809523809524,
       "contributing_sources": [
         "Item 1A (Risk)",
         "Item 7 (MD&A)",
-        "digital_presence",
-        "innovation_activity",
-        "technology_hiring"
+        "innovation_activity"
       ],
-      "total_weight": 1.3,
-      "confidence": 0.99845790415625
+      "total_weight": 0.6,
+      "confidence": 0.9877185
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 41.63795918367347,
+      "score": 52.95510204081633,
       "contributing_sources": [
         "Item 1A (Risk)",
         "board_composition",
         "leadership_signals"
       ],
       "total_weight": 1.75,
-      "confidence": 0.993301
+      "confidence": 0.984369
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 67.35714285714286,
+      "score": 76.71875,
       "contributing_sources": [
         "Item 1 (Business)",
-        "digital_presence",
-        "innovation_activity",
-        "technology_hiring"
+        "innovation_activity"
       ],
-      "total_weight": 1.4,
-      "confidence": 0.9919891125
+      "total_weight": 0.8,
+      "confidence": 0.9362
     },
     "talent": {
       "dimension": "talent",
-      "score": 67.3375,
-      "contributing_sources": [
-        "glassdoor_reviews",
-        "technology_hiring"
-      ],
-      "total_weight": 0.8,
-      "confidence": 0.9355125
+      "score": 50.0,
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 60.484,
+      "score": 52.142857142857146,
       "contributing_sources": [
         "Item 7 (MD&A)",
         "board_composition",
-        "glassdoor_reviews",
         "leadership_signals"
       ],
-      "total_weight": 1.5,
-      "confidence": 0.9970206775
+      "total_weight": 1.4,
+      "confidence": 0.9792485
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 84.61538461538461,
+      "score": 78.78846153846153,
       "contributing_sources": [
         "Item 1 (Business)",
         "Item 7 (MD&A)",
         "innovation_activity"
       ],
       "total_weight": 1.3,
-      "confidence": 0.984369
+      "confidence": 0.9877185
     },
     "culture": {
       "dimension": "culture",
-      "score": 60.822105263157894,
+      "score": 30.0,
       "contributing_sources": [
-        "glassdoor_reviews",
         "leadership_signals"
       ],
-      "total_weight": 0.95,
-      "confidence": 0.9196
+      "total_weight": 0.15,
+      "confidence": 0.44
     }
   },
   "scoring_parameters": {

@@ -1,0 +1,21 @@
+{
+  "ticker": "JNJ",
+  "company_id": "235f025e-8dc6-43bf-8286-a50a12c06eb2",
+  "signal_id": "da925435-effe-4e11-a641-294828cc9c89",
+  "collected_at": "2026-03-22T18:19:04.404974",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

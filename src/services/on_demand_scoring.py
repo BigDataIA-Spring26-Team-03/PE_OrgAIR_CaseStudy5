@@ -84,6 +84,10 @@ class OnDemandScoringService:
                 ticker, company_id
             )
 
+            # Step 2.5: Collect board BEFORE signals — leadership signal derives from
+            # board_governance_signals, so we must populate it first.
+            await self._collect_board_for_signals(ticker)
+
             # Step 3: Collect and PERSIST evidence to Snowflake
             # Two parallel tracks — each writes to Snowflake tables so
             # score_company() reads real data:
@@ -126,6 +130,10 @@ class OnDemandScoringService:
                     f"Scoring pipeline completed for '{ticker}' but the assessment "
                     "still cannot be read from CS3. Check CS3 API logs."
                 )
+
+            # Step 7: Record snapshot in assessment_history for trend tracking
+            await self._record_assessment_history(ticker)
+
             return assessment
 
     # ── helpers ─────────────────────────────────────────────────────────
@@ -133,11 +141,58 @@ class OnDemandScoringService:
     async def _try_fetch_assessment(self, ticker: str) -> Optional["CompanyAssessment"]:
         """Return CompanyAssessment if CS3 has it, else None (no exception)."""
         try:
-            from services.integration.cs3_client import CS3Client
+            from src.services.integration.cs3_client import CS3Client
             async with CS3Client() as cs3:
                 return await cs3.get_assessment(ticker)
         except Exception:
             return None
+
+    async def _record_assessment_history(self, ticker: str) -> None:
+        """
+        Persist a snapshot to assessment_history for trend tracking.
+        Best-effort: if Snowflake is down or history service fails, log and continue.
+        """
+        try:
+            from src.services.integration.cs1_client import CS1Client
+            from src.services.integration.cs3_client import CS3Client
+            from src.services.tracking.assessment_history import create_history_service
+
+            async with CS1Client() as cs1, CS3Client() as cs3:
+                svc = create_history_service(cs1, cs3)
+                await svc.record_assessment(
+                    company_id=ticker,
+                    assessor_id="on_demand_scoring",
+                    assessment_type="full",
+                )
+        except Exception as exc:
+            logger.warning(
+                "assessment_history_record_failed ticker=%s error=%s — "
+                "trend data may be incomplete",
+                ticker, exc,
+            )
+
+    async def _collect_board_for_signals(self, ticker: str) -> None:
+        """
+        Collect board governance data before signals collection.
+        The signals track derives leadership from board_governance_signals;
+        without this, leadership is empty on first run for new tickers.
+        Best-effort: log and continue if collection fails.
+        """
+        try:
+            # collect_board is sync (requests) — run in executor
+            def _collect() -> None:
+                from src.scoring.integration_service import ScoringIntegrationService
+                svc = ScoringIntegrationService()
+                svc.collect_board(ticker)
+
+            await asyncio.get_event_loop().run_in_executor(_executor, _collect)
+            logger.info("board_collected_for_signals ticker=%s", ticker)
+        except Exception as exc:
+            logger.warning(
+                "board_collect_for_signals_failed ticker=%s error=%s — "
+                "leadership signal may be empty",
+                ticker, exc,
+            )
 
     # ── parallel evidence collection ─────────────────────────────────────
 

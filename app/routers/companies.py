@@ -89,7 +89,7 @@ def create_company(payload: CompanyCreate) -> CompanyResponse:
 # ========================================
 @router.get("", response_model=List[CompanyResponse])
 def list_companies(
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=500, description="Max 500 for portfolio bulk fetch"),
     offset: int = Query(0, ge=0),
 ) -> List[CompanyResponse]:
     """List companies with pagination from Snowflake."""

@@ -1,0 +1,21 @@
+{
+  "ticker": "UNH",
+  "company_id": "52b5eb2e-14cf-4249-ae8b-8d4f5260b414",
+  "signal_id": "5b9068b8-fa93-4f41-896a-6cccdbc80422",
+  "collected_at": "2026-03-22T18:19:46.476133",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

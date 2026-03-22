@@ -1,0 +1,21 @@
+{
+  "ticker": "AAPL",
+  "company_id": "9063302a-ebbd-4a1a-b573-fb8358de296e",
+  "signal_id": "416d6a20-62a6-4365-8793-bfa5cce827b7",
+  "collected_at": "2026-03-22T18:19:00.146676",
+  "summary": {
+    "culture_score": 50.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 50.0,
+    "change_readiness_score": 50.0,
+    "ai_awareness_score": 50.0,
+    "review_count": 0,
+    "avg_rating": 3.0,
+    "confidence": 0.1,
+    "current_employee_ratio": 0.5,
+    "rationale": "Mixed employee sentiment; moderate innovation; emerging data culture; 0 reviews"
+  },
+  "reviews": [],
+  "positive_keywords": [],
+  "negative_keywords": []
+}
