@@ -1,6 +1,7 @@
 # src/services/integration/cs2_client.py
 from __future__ import annotations
 
+import asyncio
 import enum
 import logging
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ class SourceType(str, enum.Enum):
     JOB_POSTING_INDEED      = "job_posting_indeed"
     PATENT_USPTO            = "patent_uspto"
     PRESS_RELEASE           = "press_release"
+    TECH_STACK_SIGNAL       = "tech_stack_signal"  
     GLASSDOOR_REVIEW        = "glassdoor_review"
     BOARD_PROXY_DEF14A      = "board_proxy_def14a"
 
@@ -47,18 +49,26 @@ class SourceType(str, enum.Enum):
 
         # Map Snowflake section names → SourceType
         SECTION_MAP: Dict[str, "SourceType"] = {
+            # ── SEC section strings (document_chunks_sec.section, lowercased) ──
             "item 1 (business)":    cls.SEC_10K_ITEM_1,
             "item 1":               cls.SEC_10K_ITEM_1,
             "item 1a (risk)":       cls.SEC_10K_ITEM_1A,
             "item 1a":              cls.SEC_10K_ITEM_1A,
             "item 7 (md&a)":        cls.SEC_10K_ITEM_7,
             "item 7":               cls.SEC_10K_ITEM_7,
-            "item 2 (md&a)":        cls.SEC_10K_ITEM_7,  
-            "technology_hiring":    cls.JOB_POSTING_LINKEDIN,
-            "glassdoor_reviews":    cls.GLASSDOOR_REVIEW,
-            "board_composition":    cls.BOARD_PROXY_DEF14A,
+            "item 2 (md&a)":        cls.SEC_10K_ITEM_7,
+
+            # ── external_signals.category strings ──
+            "technology_hiring":    cls.JOB_POSTING_LINKEDIN,  
             "innovation_activity":  cls.PATENT_USPTO,
             "leadership_signals":   cls.PRESS_RELEASE,
+            "digital_presence":     cls.TECH_STACK_SIGNAL,    
+
+            "culture_signals":      cls.GLASSDOOR_REVIEW,      
+            "governance_signals":   cls.BOARD_PROXY_DEF14A, 
+            # Backward-compatible aliases (CS3 JSON label strings)
+            "glassdoor_reviews":    cls.GLASSDOOR_REVIEW,
+            "board_composition":    cls.BOARD_PROXY_DEF14A,
         }
 
         normalized = raw.strip().lower()
@@ -209,21 +219,54 @@ class CS2Client:
         min_confidence: float = 0.0,
         indexed: Optional[bool] = None,
         since: Optional[datetime] = None,
-        limit: int = 500,              
+        limit: int = 500,
     ) -> List[CS2Evidence]:
         """
-        Fetch evidence for a company with optional filters.
-
+        Fetch evidence for a company from all 4 sources concurrently:
+        - /api/v1/evidence       → 4 external signals (hiring, patents, digital, leadership)
+        - /api/v1/documents      → SEC 10-K chunks (documents.py)
+        - /api/v1/board-governance/ticker/{ticker} → board governance (board.py)
+        - /api/v1/culture-signals/reviews/ticker/{ticker} → Glassdoor reviews (culture.py)
         """
-        params: Dict[str, Any] = {
-            "company_id": company_id,
-            "limit": limit,             
-        }
+        ext_task  = self._fetch_external_evidence(company_id, min_confidence, indexed, since, limit)
+        sec_task  = self._fetch_sec_evidence(company_id, limit)
+        board_task = self._fetch_board_evidence(company_id)
+        gd_task   = self._fetch_glassdoor_evidence(company_id, limit)
 
+        results = await asyncio.gather(ext_task, sec_task, board_task, gd_task, return_exceptions=True)
+
+        all_evidence: List[CS2Evidence] = []
+        labels = ("external", "sec", "board", "glassdoor")
+        for label, result in zip(labels, results):
+            if isinstance(result, BaseException):
+                logger.warning("cs2_source_failed source=%s company=%s error=%s", label, company_id, result)
+            else:
+                all_evidence.extend(result)
+
+        # Apply filters if requested
         if source_types:
-            params["source_types"] = ",".join(s.value for s in source_types)
+            allowed_st = {st.value for st in source_types}
+            all_evidence = [e for e in all_evidence if e.source_type and e.source_type.value in allowed_st]
         if signal_categories:
-            params["signal_categories"] = ",".join(s.value for s in signal_categories)
+            allowed_sc = {sc.value for sc in signal_categories}
+            all_evidence = [e for e in all_evidence if e.signal_category and e.signal_category.value in allowed_sc]
+
+        return all_evidence[:limit]
+
+    # ------------------------------------------------------------------
+    # Source-specific fetch helpers
+    # ------------------------------------------------------------------
+
+    async def _fetch_external_evidence(
+        self,
+        company_id: str,
+        min_confidence: float,
+        indexed: Optional[bool],
+        since: Optional[datetime],
+        limit: int,
+    ) -> List[CS2Evidence]:
+        """Fetch 4 external signal types from /api/v1/evidence."""
+        params: Dict[str, Any] = {"company_id": company_id, "limit": limit}
         if min_confidence > 0.0:
             params["min_confidence"] = min_confidence
         if indexed is not None:
@@ -234,8 +277,128 @@ class CS2Client:
         client = self._get_client()
         response = await client.get("/api/v1/evidence", params=params)
         response.raise_for_status()
-
         return [self._map_evidence(item) for item in response.json()]
+
+    async def _fetch_sec_evidence(self, company_id: str, limit: int) -> List[CS2Evidence]:
+        """Fetch SEC 10-K chunks from documents.py router."""
+        client = self._get_client()
+        ticker = company_id.upper()
+
+        # Step 1: get list of chunked documents for this ticker
+        doc_resp = await client.get(
+            "/api/v1/documents",
+            params={"ticker": ticker, "status": "chunked", "limit": 50},
+        )
+        if doc_resp.status_code != 200:
+            return []
+        docs = doc_resp.json()
+        if not docs:
+            return []
+
+        # Step 2: fetch chunks for each document in parallel
+        async def _get_chunks(doc: dict) -> List[CS2Evidence]:
+            chunk_resp = await client.get(
+                f"/api/v1/documents/{doc['id']}/chunks",
+                params={"limit": 500},
+            )
+            if chunk_resp.status_code != 200:
+                return []
+            items = []
+            filing_date = doc.get("filing_date") or ""
+            try:
+                fy = int(filing_date[:4]) if filing_date and len(filing_date) >= 4 else None
+            except (ValueError, TypeError):
+                fy = None
+            for chunk in chunk_resp.json():
+                section = chunk.get("section") or ""
+                source_type = SourceType.from_raw(section) or SourceType.SEC_10K_ITEM_1
+                items.append(CS2Evidence(
+                    evidence_id=str(chunk.get("id", "")),
+                    company_id=company_id,
+                    source_type=source_type,
+                    signal_category=SignalCategory.DIGITAL_PRESENCE,
+                    content=str(chunk.get("content") or ""),
+                    extracted_at=datetime.now(),
+                    confidence=0.85,
+                    fiscal_year=fy,
+                    source_url=doc.get("source_url"),
+                    filing_type=doc.get("filing_type"),
+                    section=section,
+                    chunk_index=chunk.get("chunk_index"),
+                ))
+            return items
+
+        chunk_lists = await asyncio.gather(*[_get_chunks(doc) for doc in docs], return_exceptions=True)
+        evidence: List[CS2Evidence] = []
+        for result in chunk_lists:
+            if isinstance(result, list):
+                evidence.extend(result)
+        return evidence[:limit]
+
+    async def _fetch_board_evidence(self, company_id: str) -> List[CS2Evidence]:
+        """Fetch board governance evidence from board.py router."""
+        client = self._get_client()
+        resp = await client.get(f"/api/v1/board-governance/ticker/{company_id.upper()}")
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        if not data:
+            return []
+        # May return a list or a single object
+        items = data if isinstance(data, list) else [data]
+        evidence: List[CS2Evidence] = []
+        for item in items:
+            raw_evidence = item.get("evidence") or []
+            if isinstance(raw_evidence, list):
+                content = " | ".join(str(e) for e in raw_evidence if e)
+            else:
+                content = str(raw_evidence)
+            if not content.strip():
+                continue
+            evidence.append(CS2Evidence(
+                evidence_id=str(item.get("id", "")),
+                company_id=company_id,
+                source_type=SourceType.BOARD_PROXY_DEF14A,
+                signal_category=SignalCategory.GOVERNANCE_SIGNALS,
+                content=content,
+                extracted_at=datetime.now(),
+                confidence=float(item.get("confidence", 0.7)),
+            ))
+        return evidence
+
+    async def _fetch_glassdoor_evidence(self, company_id: str, limit: int) -> List[CS2Evidence]:
+        """Fetch Glassdoor reviews from culture.py router."""
+        client = self._get_client()
+        resp = await client.get(f"/api/v1/culture-signals/reviews/ticker/{company_id.upper()}")
+        if resp.status_code != 200:
+            return []
+        reviews = resp.json()
+        if not reviews:
+            return []
+        evidence: List[CS2Evidence] = []
+        for r in reviews[:limit]:
+            title = r.get("title") or ""
+            pros  = r.get("pros") or ""
+            cons  = r.get("cons") or ""
+            content = f"{title}: {pros} / {cons}".strip(": /").strip()
+            if not content:
+                continue
+            rd = r.get("review_date") or ""
+            try:
+                fy = int(str(rd)[:4]) if rd and len(str(rd)) >= 4 else None
+            except (ValueError, TypeError):
+                fy = None
+            evidence.append(CS2Evidence(
+                evidence_id=str(r.get("id", "")),
+                company_id=company_id,
+                source_type=SourceType.GLASSDOOR_REVIEW,
+                signal_category=SignalCategory.CULTURE_SIGNALS,
+                content=content,
+                extracted_at=datetime.now(),
+                confidence=float(r.get("culture_score") or 0.7),
+                fiscal_year=fy,
+            ))
+        return evidence
 
     async def mark_indexed(self, evidence_ids: List[str]) -> int:
         """

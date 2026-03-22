@@ -21,6 +21,11 @@ class CS4Client:
     result = await cs4.generate_justification("NVDA", "talent")
     """
 
+    def __init__(self) -> None:
+        # Create once — avoids reopening ChromaDB on every call (especially
+        # during IC prep where all 7 dimensions are generated back-to-back).
+        self._generator = JustificationGenerator()
+
     async def generate_justification(
         self,
         company_id: str,
@@ -44,12 +49,10 @@ class CS4Client:
             Includes score, rubric match, up to 5 cited evidence items,
             gaps to the next rubric level, and an LLM-generated summary.
         """
-        # Accept both string ("talent") and enum (Dimension.TALENT)
         if isinstance(dimension, str):
             dimension = Dimension(dimension)
 
-        generator = JustificationGenerator()
-        return await generator.generate_justification(company_id, dimension)
+        return await self._generator.generate_justification(company_id, dimension)
 
 
 # Module-level singleton — consistent with ebitda_calculator / gap_analyzer
