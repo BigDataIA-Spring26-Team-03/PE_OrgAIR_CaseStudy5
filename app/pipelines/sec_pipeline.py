@@ -875,7 +875,12 @@ def run_pipeline(tickers: Optional[List[str]] = None) -> None:
             targets = [r["ticker"] for r in rows]
             logger.info("Loaded %d active tickers from Snowflake", len(targets))
         except Exception as exc:
-            logger.warning("Could not load tickers from Snowflake (%s), falling back to defaults", exc)
+            logger.error(
+                "Snowflake ticker load FAILED (%s). "
+                "SEC pipeline will run on hardcoded fallback of 5 tickers ONLY: %s. "
+                "Fix Snowflake connection to process all companies.",
+                exc, ["NVDA", "JPM", "WMT", "GE", "DG"]
+            )
             targets = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
     pipeline = SECPipeline()

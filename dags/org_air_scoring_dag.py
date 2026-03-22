@@ -44,7 +44,14 @@ def _load_companies() -> list:
             "SELECT ticker, name FROM companies WHERE is_deleted = FALSE AND ticker IS NOT NULL"
         )
         return [{"ticker": r["ticker"], "name": r.get("name", r["ticker"]), "sector": "Unknown"} for r in rows]
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            "Snowflake company load FAILED (%s). "
+            "DAG will score only the hardcoded fallback of 5 companies: %s. "
+            "Fix Snowflake connection to score all portfolio companies.",
+            exc, [c["ticker"] for c in _FALLBACK_COMPANIES]
+        )
         return _FALLBACK_COMPANIES
 
 
