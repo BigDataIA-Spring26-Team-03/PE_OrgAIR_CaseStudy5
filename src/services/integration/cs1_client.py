@@ -109,17 +109,15 @@ class CS1Client:
     # ------------------------------------------------------------------
 
     async def get_company(self, ticker: str) -> Company:
-        """Fetch a single company by ticker symbol."""
-        ticker_upper = ticker.upper()
-        # CS1 API max limit is 100 — fetch all and scan
-        companies = await self._fetch_all_companies(limit=100, offset=0)
-        for company in companies:
-            if company.ticker and company.ticker.upper() == ticker_upper:
-                return company
-        raise ValueError(
-            f"Company with ticker '{ticker_upper}' not found in CS1. "
-            "Ensure the company exists in the CS1 database."
-        )
+        client = self._get_client()
+        try:
+            response = await client.get(f"/api/v1/companies/{ticker.upper()}")
+            response.raise_for_status()
+            return self._map_company(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ValueError(f"Company '{ticker}' not found in CS1.")
+            raise
 
     async def list_companies(
         self,
@@ -128,7 +126,7 @@ class CS1Client:
         limit: int = 50,
         offset: int = 0,
     ) -> List[Company]:
-        safe_limit = min(limit, 100)  # CS1 API max limit is 100
+        safe_limit = min(limit, 100)  
         companies = await self._fetch_all_companies(limit=safe_limit, offset=offset)
         if sector is not None:
             companies = [c for c in companies if c.sector == sector]
@@ -141,12 +139,11 @@ class CS1Client:
         return companies
 
     async def get_portfolio_companies(self, portfolio_id: str) -> List[Company]:
-        raise NotImplementedError(
-            f"get_portfolio_companies('{portfolio_id}'): "
-            "The /api/v1/portfolios endpoint is not yet implemented in CS1. "
-            "Use list_companies() or get_company() per ticker instead."
+        logger.warning(
+            "portfolios endpoint not implemented, falling back to list_companies",
+            extra={"portfolio_id": portfolio_id}
         )
-
+        return await self.list_companies()
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

@@ -31,6 +31,7 @@ from mcp.types import (
     Tool,
 )
 
+from src.services.integration.cs1_client import CS1Client
 from src.services.integration.cs2_client import CS2Client, SignalCategory
 from src.services.integration.cs3_client import CS3Client, Dimension
 from src.services.cs4_client import CS4Client, cs4_client
@@ -436,6 +437,24 @@ async def list_resources() -> List[Resource]:
     """List addressable resources available to MCP clients."""
     return [
         Resource(
+            uri="orgair://companies",
+            name="Portfolio Companies (CS1)",
+            description=(
+                "Live list of all portfolio companies from the CS1 platform API. "
+                "Returns company_id, ticker, name, sector, and position_factor "
+                "for every company currently registered in the system."
+            ),
+        ),
+        Resource(
+            uri="orgair://company/{ticker}",
+            name="Company Metadata (CS1)",
+            description=(
+                "Live company metadata for a single ticker from the CS1 platform API. "
+                "Replace {ticker} with the ticker symbol, e.g. orgair://company/NVDA. "
+                "Returns company_id, name, sector, market_cap_percentile, and more."
+            ),
+        ),
+        Resource(
             uri="orgair://parameters/v2.0",
             name="Org-AI-R Scoring Parameters v2.0",
             description=(
@@ -457,6 +476,67 @@ async def list_resources() -> List[Resource]:
 @mcp_server.read_resource()
 async def read_resource(uri: str) -> str:
     """Serve resource content by URI."""
+
+    # ── CS1: full company list ───────────────────────────────────────────
+    if uri == "orgair://companies":
+        async with CS1Client() as cs1:
+            companies = await cs1.list_companies(limit=100)
+        return json.dumps(
+            [
+                {
+                    "company_id":   c.company_id,
+                    "ticker":       c.ticker,
+                    "name":         c.name,
+                    "sector":       c.sector.value if c.sector else None,
+                    "position_factor": c.position_factor,
+                }
+                for c in companies
+            ],
+            indent=2,
+        )
+
+    # ── CS1: single company by ticker ────────────────────────────────────
+    if uri.startswith("orgair://company/"):
+        ticker = uri.split("/")[-1].upper().strip()
+        try:
+            async with CS1Client() as cs1:
+                company = await cs1.get_company(ticker)
+            return json.dumps(
+                {
+                    "company_id":            company.company_id,
+                    "ticker":                company.ticker,
+                    "name":                  company.name,
+                    "sector":                company.sector.value if company.sector else None,
+                    "position_factor":       company.position_factor,
+                    "market_cap_percentile": company.market_cap_percentile,
+                    "revenue_millions":      company.revenue_millions,
+                    "employee_count":        company.employee_count,
+                    "fiscal_year_end":       company.fiscal_year_end,
+                    "source":                "cs1",
+                },
+                indent=2,
+            )
+        except Exception:
+            # Ticker not registered in CS1 — fall back to yfinance
+            import yfinance as yf
+            info = yf.Ticker(ticker).info or {}
+            return json.dumps(
+                {
+                    "company_id":            None,
+                    "ticker":                ticker,
+                    "name":                  info.get("longName") or info.get("shortName") or ticker,
+                    "sector":                info.get("sector"),
+                    "position_factor":       None,
+                    "market_cap_percentile": None,
+                    "revenue_millions":      round(info["totalRevenue"] / 1e6, 2) if info.get("totalRevenue") else None,
+                    "employee_count":        info.get("fullTimeEmployees"),
+                    "fiscal_year_end":       info.get("lastFiscalYearEnd"),
+                    "source":                "yfinance_fallback",
+                    "note":                  f"{ticker} is not yet registered in CS1. Metadata sourced from yfinance.",
+                },
+                indent=2,
+            )
+
     if uri == "orgair://parameters/v2.0":
         params = {
             "version": "2.0",
