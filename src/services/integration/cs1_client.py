@@ -139,9 +139,27 @@ class CS1Client:
         return companies
 
     async def get_portfolio_companies(self, portfolio_id: str) -> List[Company]:
+        """
+        Fetch all companies for a portfolio.
+
+        Tries GET /api/v1/portfolios/{portfolio_id}/companies first.
+        Falls back to list_companies() if that endpoint doesn't exist yet.
+        """
+        client = self._get_client()
+
+        try:
+            response = await client.get(
+                f"/api/v1/portfolios/{portfolio_id}/companies"
+            )
+            if response.status_code == 200:
+                return [self._map_company(item) for item in response.json()]
+        except Exception:
+            pass  # endpoint doesn't exist yet — use fallback
+
         logger.warning(
-            "portfolios endpoint not implemented, falling back to list_companies",
-            extra={"portfolio_id": portfolio_id}
+            "get_portfolio_companies: portfolios endpoint not available, "
+            "falling back to list_companies(). portfolio_id=%s",
+            portfolio_id,
         )
         return await self.list_companies()
     # ------------------------------------------------------------------
@@ -159,7 +177,9 @@ class CS1Client:
         return [self._map_company(item) for item in response.json()]
 
     def _map_company(self, data: dict) -> Company:
-        raw_sector = data.get("sector") or data.get("industry") or ""
+        raw_sector  = data.get("sector") or data.get("industry") or ""
+        raw_revenue = data.get("revenue_millions") or data.get("revenue_mm")
+
         return Company(
             company_id=str(data.get("id", "")),
             ticker=str(data.get("ticker") or "").upper(),
@@ -167,11 +187,21 @@ class CS1Client:
             industry_id=str(data.get("industry_id", "")) or None,
             position_factor=float(data.get("position_factor", 0.0)),
             sector=Sector.from_raw(raw_sector) if raw_sector else None,
-            sub_sector=None,
-            market_cap_percentile=None,
-            revenue_millions=None,
-            employee_count=None,
-            fiscal_year_end=None,
+            sub_sector=data.get("sub_sector"),
+            market_cap_percentile=(
+                float(data["market_cap_percentile"])
+                if data.get("market_cap_percentile") is not None
+                else None
+            ),
+            revenue_millions=(
+                float(raw_revenue) if raw_revenue is not None else None
+            ),
+            employee_count=(
+                int(data["employee_count"])
+                if data.get("employee_count") is not None
+                else None
+            ),
+            fiscal_year_end=data.get("fiscal_year_end"),
         )
 
     def _get_client(self) -> httpx.AsyncClient:
