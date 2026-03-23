@@ -237,8 +237,7 @@ class SnowflakeHistoryStore:
                 (id, company_id, assessed_at, org_air, vr_score, hr_score,
                  synergy_score, dimension_scores, ci_lower, ci_upper,
                  evidence_count, assessor_id, assessment_type)
-            VALUES
-                (%s, %s, %s, %s, %s, %s, %s, PARSE_JSON(%s), %s, %s, %s, %s, %s)
+            SELECT %s, %s, %s, %s, %s, %s, %s, PARSE_JSON(%s), %s, %s, %s, %s, %s
         """
         params = (
             str(uuid.uuid4()),

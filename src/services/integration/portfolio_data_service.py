@@ -9,6 +9,11 @@ from typing import Dict, List, Optional
 import requests
 
 from src.scoring.integration_service import ScoringIntegrationService
+from src.services.integration.cs1_client import CS1Client
+from src.services.integration.cs3_client import CS3Client
+from src.services.tracking.assessment_history import (
+    create_history_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +141,23 @@ class PortfolioDataService:
                     dimension_scores[str(dim)] = float(payload)
 
             entry_org_air = 45.0
+
+            # Record history snapshot — runs in same thread as _score_one_ticker
+            # Uses asyncio since we are already inside an async method
+            try:
+                async with CS1Client() as _cs1:
+                    async with CS3Client() as _cs3:
+                        _hist = create_history_service(_cs1, _cs3)
+                        await _hist.record_assessment(
+                            company_id=ticker,
+                            assessor_id="portfolio-data-service",
+                            assessment_type="full",
+                        )
+            except Exception as hist_exc:
+                logger.warning(
+                    "portfolio_history_record_failed: ticker=%s error=%s",
+                    ticker, hist_exc,
+                )
 
             # Fetch real company name from CS1
             company_name = ticker  # safe default if CS1 call fails
