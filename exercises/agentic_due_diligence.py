@@ -14,6 +14,12 @@ from __future__ import annotations
 import asyncio
 import sys
 from datetime import datetime
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env before agents import ChatOpenAI/ChatAnthropic (need OPENAI_API_KEY, etc.)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from agents.state import DueDiligenceState
 from agents.supervisor import dd_graph
@@ -85,14 +91,22 @@ def _print_result(result: DueDiligenceState) -> None:
     print(f"Completed     : {result.get('completed_at', 'N/A')}")
 
     # Scoring
+    def _fmt(v):
+        if v is None or v == "N/A":
+            return "N/A"
+        try:
+            return f"{float(v):.1f}"
+        except (TypeError, ValueError):
+            return str(v)
+
     scoring = result.get("scoring_result") or {}
     if scoring:
-        print(f"\nOrg-AI-R      : {scoring.get('org_air', 'N/A'):.1f}")
-        print(f"V^R           : {scoring.get('vr_score', 'N/A'):.1f}")
-        print(f"H^R           : {scoring.get('hr_score', 'N/A'):.1f}")
+        print(f"\nOrg-AI-R      : {_fmt(scoring.get('org_air', 'N/A'))}")
+        print(f"V^R           : {_fmt(scoring.get('vr_score', 'N/A'))}")
+        print(f"H^R           : {_fmt(scoring.get('hr_score', 'N/A'))}")
         ci = scoring.get("confidence_interval", [])
-        if ci:
-            print(f"95% CI        : [{ci[0]:.1f}, {ci[1]:.1f}]")
+        if ci and len(ci) >= 2:
+            print(f"95% CI        : [{_fmt(ci[0])}, {_fmt(ci[1])}]")
 
     # HITL
     requires = result.get("requires_approval", False)
@@ -110,7 +124,7 @@ def _print_result(result: DueDiligenceState) -> None:
     gap = vc.get("gap_analysis") or {}
     if gap:
         ebitda_pct = gap.get("projected_ebitda_pct", 0)
-        print(f"\nEBITDA Impact : {ebitda_pct:.1f}%")
+        print(f"\nEBITDA Impact : {_fmt(ebitda_pct)}%")
 
     # Message log
     messages = result.get("messages") or []

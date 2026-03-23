@@ -8,170 +8,43 @@ import structlog
 
 from agents.state import DueDiligenceState
 
-# Direct service calls — no HTTP bridge required
-from src.services.integration.cs2_client import CS2Client, SignalCategory
-from src.services.integration.cs3_client import CS3Client
-from src.services.cs4_client import cs4_client
-from src.services.integration.portfolio_data_service import portfolio_data_service
-from src.services.value_creation.ebitda import ebitda_calculator
-from src.services.value_creation.gap_analysis import gap_analyzer
+import httpx
 
 logger = structlog.get_logger()
-
-_DIMENSION_TO_SIGNALS: Dict[str, Optional[List[SignalCategory]]] = {
-    "data_infrastructure": [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.DIGITAL_PRESENCE],
-    "ai_governance": [SignalCategory.GOVERNANCE_SIGNALS, SignalCategory.BOARD_COMPOSITION],
-    "technology_stack": [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.TECHNOLOGY_HIRING],
-    "talent": [SignalCategory.TECHNOLOGY_HIRING, SignalCategory.CULTURE_SIGNALS],
-    "leadership": [SignalCategory.LEADERSHIP_SIGNALS, SignalCategory.BOARD_COMPOSITION],
-    "use_case_portfolio": [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.DIGITAL_PRESENCE],
-    "culture": [SignalCategory.CULTURE_SIGNALS, SignalCategory.GLASSDOOR_REVIEWS],
-    "all": None,
-}
 
 
 class ToolCaller:
     """
-    Invokes MCP tools by calling the underlying services directly.
-    No HTTP bridge needed — agents work when run in the same process as the app.
+    Calls MCP tools via HTTP POST to the MCP server.
+    The MCP server must be running at base_url for agents to work.
+    This ensures agents go through MCP (not direct imports),
+    which is required by CS5 grading criteria.
     """
 
+    def __init__(self, base_url: str = "http://localhost:3000"):
+        self.base_url = base_url
+
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
-        """Execute tool logic and return JSON string result."""
+        """
+        POST to {base_url}/tools/{tool_name} with json=arguments.
+        Returns response JSON result as string.
+        If any exception occurs, logs warning and returns "{}".
+        """
         try:
-            if tool_name == "calculate_org_air_score":
-                return await self._calculate_org_air_score(arguments)
-            if tool_name == "get_company_evidence":
-                return await self._get_company_evidence(arguments)
-            if tool_name == "generate_justification":
-                return await self._generate_justification(arguments)
-            if tool_name == "run_gap_analysis":
-                return await self._run_gap_analysis(arguments)
-            if tool_name == "project_ebitda_impact":
-                return self._project_ebitda_impact(arguments)
-            if tool_name == "get_portfolio_summary":
-                return await self._get_portfolio_summary(arguments)
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/tools/{tool_name}",
+                    json=arguments,
+                )
+                response.raise_for_status()
+                data = response.json()
+                # Handle both {"result": "..."} and direct JSON response
+                if isinstance(data, dict) and "result" in data:
+                    return data["result"]
+                return json.dumps(data)
         except Exception as exc:
             logger.warning("tool_call_failed", tool=tool_name, error=str(exc))
-        return "{}"
-
-    async def _calculate_org_air_score(self, args: dict) -> str:
-        async with CS3Client() as cs3:
-            a = await cs3.get_assessment(args["company_id"])
-        result = {
-            "company_id": args["company_id"],
-            "assessed_at": datetime.now(timezone.utc).isoformat(),
-            "org_air": a.org_air_score,
-            "vr_score": a.vr_score,
-            "hr_score": a.hr_score,
-            "synergy_score": a.synergy_score,
-            "confidence_interval": list(a.confidence_interval),
-            "dimension_scores": {d.value: s.score for d, s in a.dimension_scores.items()},
-        }
-        return json.dumps(result, indent=2)
-
-    async def _get_company_evidence(self, args: dict) -> str:
-        dim_key = args.get("dimension", "all")
-        signal_cats = _DIMENSION_TO_SIGNALS.get(dim_key)
-        limit = args.get("limit", 10)
-        async with CS2Client() as cs2:
-            evidence = await cs2.get_evidence(
-                company_id=args["company_id"],
-                signal_categories=signal_cats,
-                limit=limit,
-            )
-        items = [
-            {
-                "source_type": e.source_type.value,
-                "content": e.content[:500],
-                "confidence": e.confidence,
-                "signal_category": e.signal_category.value,
-                "filing_type": e.filing_type,
-                "extracted_at": e.extracted_at.isoformat() if e.extracted_at else None,
-            }
-            for e in evidence
-        ]
-        return json.dumps(items, indent=2)
-
-    async def _generate_justification(self, args: dict) -> str:
-        j = await cs4_client.generate_justification(
-            company_id=args["company_id"],
-            dimension=args["dimension"],
-        )
-        result = {
-            "dimension": args["dimension"],
-            "score": j.score,
-            "level": j.level,
-            "level_name": j.level_name,
-            "evidence_strength": j.evidence_strength,
-            "rubric_criteria": j.rubric_criteria,
-            "rubric_keywords": j.rubric_keywords,
-            "generated_summary": j.generated_summary,
-            "supporting_evidence": [
-                {
-                    "source_type": e.source_type,
-                    "content": e.content[:300],
-                    "confidence": e.confidence,
-                    "matched_keywords": e.matched_keywords,
-                }
-                for e in j.supporting_evidence[:5]
-            ],
-            "gaps_identified": j.gaps_identified,
-        }
-        return json.dumps(result, indent=2)
-
-    async def _run_gap_analysis(self, args: dict) -> str:
-        async with CS3Client() as cs3:
-            a = await cs3.get_assessment(args["company_id"])
-        current_scores = {d.value: s.score for d, s in a.dimension_scores.items()}
-        analysis = gap_analyzer.analyze(
-            company_id=args["company_id"],
-            current_scores=current_scores,
-            target_org_air=args["target_org_air"],
-        )
-        return json.dumps(analysis, indent=2)
-
-    def _project_ebitda_impact(self, args: dict) -> str:
-        p = ebitda_calculator.project(
-            company_id=args["company_id"],
-            entry_score=args["entry_score"],
-            exit_score=args["target_score"],
-            h_r_score=args["h_r_score"],
-        )
-        result = {
-            "company_id": args["company_id"],
-            "delta_air": float(p.delta_air),
-            "scenarios": {
-                "conservative": f"{p.conservative_pct:.2f}%",
-                "base": f"{p.base_pct:.2f}%",
-                "optimistic": f"{p.optimistic_pct:.2f}%",
-            },
-            "risk_adjusted": f"{p.risk_adjusted_pct:.2f}%",
-            "requires_approval": p.requires_approval,
-        }
-        return json.dumps(result, indent=2)
-
-    async def _get_portfolio_summary(self, args: dict) -> str:
-        companies = await portfolio_data_service.get_portfolio_view(args["fund_id"])
-        fund_air = round(sum(c.org_air for c in companies) / len(companies), 1) if companies else 0.0
-        result = {
-            "fund_id": args["fund_id"],
-            "fund_air": fund_air,
-            "company_count": len(companies),
-            "companies": [
-                {
-                    "ticker": c.ticker,
-                    "name": c.name,
-                    "sector": c.sector,
-                    "org_air": c.org_air,
-                    "vr_score": c.vr_score,
-                    "hr_score": c.hr_score,
-                    "delta_since_entry": c.delta_since_entry,
-                }
-                for c in companies
-            ],
-        }
-        return json.dumps(result, indent=2)
+            return "{}"
 
 
 mcp_client = ToolCaller()
