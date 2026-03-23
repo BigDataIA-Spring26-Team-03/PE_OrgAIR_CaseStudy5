@@ -39,13 +39,21 @@ from src.services.integration.portfolio_data_service import portfolio_data_servi
 from src.services.value_creation.ebitda import ebitda_calculator
 from src.services.value_creation.gap_analysis import gap_analyzer
 from src.services.on_demand_scoring import OnDemandScoringService
+from src.services.tracking.assessment_history import (
+    create_history_service,
+)
 
 logger = logging.getLogger(__name__)
 
-cs2_client = CS2Client()
-cs3_client = CS3Client()
-on_demand = OnDemandScoringService()
-mcp_server = Server("pe-orgair-server")
+cs2_client       = CS2Client()
+cs3_client       = CS3Client()
+on_demand        = OnDemandScoringService()
+mcp_server       = Server("pe-orgair-server")
+_cs1_for_history = CS1Client()
+history_service  = create_history_service(
+    cs1=_cs1_for_history,
+    cs3=cs3_client,
+)
 
 _DIMENSION_TO_SIGNALS: Dict[str, Optional[List[SignalCategory]]] = {
     "data_infrastructure": [SignalCategory.INNOVATION_ACTIVITY, SignalCategory.DIGITAL_PRESENCE],
@@ -250,6 +258,19 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 )
                 assessment = await on_demand.get_or_score_company(company_id)
                 freshly_scored = True
+            # Record history snapshot 
+            try:
+                await history_service.record_assessment(
+                    company_id=company_id,
+                    assessor_id="mcp-calculate-org-air-score",
+                    assessment_type="full",
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "history_record_failed: company=%s error=%s",
+                    company_id, hist_exc,
+                )
+
             result = {
                 "company_id":          company_id,
                 "assessed_at":         datetime.now(timezone.utc).isoformat(),
@@ -371,12 +392,39 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     f"{company_id} was not previously scored. "
                     "Full evidence pipeline was run to compute this analysis."
                 )
+
+            # Record history snapshot
+            try:
+                await history_service.record_assessment(
+                    company_id=company_id,
+                    assessor_id="mcp-run-gap-analysis",
+                    assessment_type="full",
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "history_record_failed: company=%s error=%s",
+                    company_id, hist_exc,
+                )
+
             return [TextContent(type="text", text=json.dumps(analysis, indent=2))]
 
         elif name == "refresh_company_data":
             company_id = arguments["company_id"].upper().strip()
             logger.info("refresh_company_data: force-refresh requested for %s", company_id)
             assessment = await on_demand.get_or_score_company(company_id, force_refresh=True)
+            # Record history snapshot
+            try:
+                await history_service.record_assessment(
+                    company_id=company_id,
+                    assessor_id="mcp-refresh-company-data",
+                    assessment_type="full",
+                )
+            except Exception as hist_exc:
+                logger.warning(
+                    "history_record_failed: company=%s error=%s",
+                    company_id, hist_exc,
+                )
+
             result = {
                 "company_id":    company_id,
                 "refreshed_at":  datetime.now(timezone.utc).isoformat(),

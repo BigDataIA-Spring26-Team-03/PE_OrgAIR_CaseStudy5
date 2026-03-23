@@ -229,6 +229,46 @@ def org_air_scoring_pipeline():
         return assessment_id or ""
 
     @task
+    def record_history(ticker: str, assessment_id: str) -> dict:
+        """
+        Record Org-AI-R assessment snapshot in history table.
+        Receives assessment_id from persist_to_snowflake to establish
+        an explicit Airflow dependency — history is only recorded after
+        the Snowflake persist succeeds.
+        """
+        import asyncio
+        from src.services.integration.cs1_client import CS1Client
+        from src.services.integration.cs3_client import CS3Client
+        from src.services.tracking.assessment_history import (
+            create_history_service,
+        )
+
+        async def _record() -> dict:
+            async with CS1Client() as cs1:
+                async with CS3Client() as cs3:
+                    service = create_history_service(cs1, cs3)
+                    snapshot = await service.record_assessment(
+                        company_id=ticker,
+                        assessor_id="airflow-dag",
+                        assessment_type="full",
+                    )
+                    return {
+                        "company_id": snapshot.company_id,
+                        "org_air":    float(snapshot.org_air),
+                        "timestamp":  snapshot.timestamp.isoformat(),
+                    }
+
+        try:
+            return asyncio.run(_record())
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "record_history_failed: ticker=%s error=%s",
+                ticker, exc,
+            )
+            return {"company_id": ticker, "status": "history_record_failed"}
+
+    @task
     def generate_result_json(
         ticker: str,
         results: dict,
@@ -279,6 +319,11 @@ def org_air_scoring_pipeline():
         assessment_id = persist_to_snowflake.override(
             task_id=f"persist_{ticker}"
         )(ticker, comp, scores)
+
+        # Record history snapshot after persist succeeds
+        record_history.override(
+            task_id=f"record_history_{ticker}"
+        )(ticker, assessment_id)
 
         generate_result_json.override(task_id=f"result_json_{ticker}")(
             ticker, scores, name, assessment_id
