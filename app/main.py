@@ -16,6 +16,7 @@ from app.routers.search import router as search_router
 from app.routers.justification import router as justification_router
 from app.routers.evidence import router as evidence_router
 from app.routers.analyst_notes import router as analyst_notes_router
+from app.routers.assessment_history import router as assessment_history_router
 from app.core.deps import get_retriever
 
 
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(justification_router, prefix="/api/v1")
     app.include_router(evidence_router, prefix="/api/v1")
     app.include_router(analyst_notes_router, prefix="/api/v1")
+    app.include_router(assessment_history_router, prefix="/api/v1")
     return app
 
 

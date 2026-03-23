@@ -65,8 +65,9 @@ async def test_calculate_org_air_calls_cs3():
         mock_cs3.return_value = _make_assessment(72.5)
         result = await srv.call_tool("calculate_org_air_score", {"company_id": "NVDA"})
 
-    # CS3 must have been called with the right ticker
-    mock_cs3.assert_called_once_with("NVDA")
+    # CS3 called at least once (main flow) and again by record_assessment for history
+    assert mock_cs3.call_count >= 1
+    mock_cs3.assert_any_call("NVDA")
 
     import json
     data = json.loads(result[0].text)
@@ -77,18 +78,20 @@ async def test_calculate_org_air_calls_cs3():
 @pytest.mark.asyncio
 async def test_no_hardcoded_data_when_cs3_down():
     """
-    When CS3 is unavailable the tool must surface an error,
+    When CS3 and on-demand fallback both fail, the tool must surface an error,
     NOT silently return hardcoded scores.
     """
     import pe_mcp.server as srv
 
-    with patch.object(srv.cs3_client, "get_assessment", new_callable=AsyncMock) as mock_cs3:
+    with patch.object(srv.cs3_client, "get_assessment", new_callable=AsyncMock) as mock_cs3, \
+         patch.object(srv.on_demand, "get_or_score_company", new_callable=AsyncMock) as mock_ods:
         mock_cs3.side_effect = ConnectionError("CS3 not running")
+        mock_ods.side_effect = ConnectionError("On-demand scoring unavailable")
         result = await srv.call_tool("calculate_org_air_score", {"company_id": "NVDA"})
 
     text = result[0].text
     assert "Error" in text or "error" in text.lower(), (
-        f"Expected error response when CS3 is down, got: {text}"
+        f"Expected error response when CS3 and on-demand are down, got: {text}"
     )
 
 

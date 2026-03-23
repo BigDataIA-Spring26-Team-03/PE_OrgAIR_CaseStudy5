@@ -22,6 +22,10 @@ from agents.specialists import (
     sec_agent,
     value_agent,
 )
+from src.services.observability.metrics import (
+    track_agent,
+    HITL_APPROVALS,
+)
 
 logger = structlog.get_logger()
 
@@ -51,26 +55,31 @@ async def supervisor_node(state: DueDiligenceState) -> Dict[str, Any]:
         return {"next_agent": "complete"}
 
 
+@track_agent("sec_analyst")
 async def sec_analyst_node(state: DueDiligenceState) -> Dict[str, Any]:
     logger.info("agent_start", agent="sec_analyst", company=state.get("company_id"))
     return await sec_agent.analyze(state)
 
 
+@track_agent("scorer")
 async def scorer_node(state: DueDiligenceState) -> Dict[str, Any]:
     logger.info("agent_start", agent="scorer", company=state.get("company_id"))
     return await scoring_agent.calculate(state)
 
 
+@track_agent("evidence_agent")
 async def evidence_node(state: DueDiligenceState) -> Dict[str, Any]:
     logger.info("agent_start", agent="evidence_agent", company=state.get("company_id"))
     return await evidence_agent.justify(state)
 
 
+@track_agent("value_creator")
 async def value_creator_node(state: DueDiligenceState) -> Dict[str, Any]:
     logger.info("agent_start", agent="value_creator", company=state.get("company_id"))
     return await value_agent.plan(state)
 
 
+@track_agent("hitl_approval")
 async def hitl_approval_node(state: DueDiligenceState) -> Dict[str, Any]:
     """
     Human-in-the-Loop approval gate.
@@ -90,6 +99,8 @@ async def hitl_approval_node(state: DueDiligenceState) -> Dict[str, Any]:
         company_id=company_id,
         reason=reason,
     )
+
+    HITL_APPROVALS.labels(reason=reason[:64], decision="approved").inc()
 
     return {
         "approval_status": "approved",

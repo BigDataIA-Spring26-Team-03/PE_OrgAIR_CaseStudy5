@@ -38,6 +38,7 @@ class ToolRequest(BaseModel):
     h_r_score: float = 0.0
     target_org_air: float = 75.0
     fund_id: str = "growth_fund_v"
+    days: int = 365
 
 
 @http_app.post("/tools/calculate_org_air_score")
@@ -156,6 +157,53 @@ async def run_gap_analysis(req: ToolRequest):
         return {"result": json.dumps(analysis)}
     except Exception as e:
         logger.error("tool_error", tool="run_gap_analysis", error=str(e))
+        return {"result": json.dumps({"error": str(e)})}
+
+
+@http_app.post("/tools/get_assessment_history")
+async def get_assessment_history(req: ToolRequest):
+    try:
+        from src.services.integration.cs1_client import CS1Client
+        from src.services.integration.cs3_client import CS3Client
+        from src.services.tracking.assessment_history import create_history_service
+
+        async with CS1Client() as cs1:
+            async with CS3Client() as cs3:
+                service = create_history_service(cs1, cs3)
+                history = await service.get_history(req.company_id or "", days=req.days)
+                trend = await service.calculate_trend(req.company_id or "")
+
+        result = {
+            "company_id": req.company_id,
+            "days": req.days,
+            "trend": {
+                "current_org_air": trend.current_org_air,
+                "entry_org_air": trend.entry_org_air,
+                "delta_since_entry": trend.delta_since_entry,
+                "delta_30d": trend.delta_30d,
+                "delta_90d": trend.delta_90d,
+                "trend_direction": trend.trend_direction,
+                "snapshot_count": trend.snapshot_count,
+            },
+            "history": [
+                {
+                    "assessed_at": s.timestamp.isoformat(),
+                    "org_air": float(s.org_air),
+                    "vr_score": float(s.vr_score),
+                    "hr_score": float(s.hr_score),
+                    "synergy_score": float(s.synergy_score),
+                    "confidence_interval": list(s.confidence_interval) if s.confidence_interval else [],
+                    "evidence_count": s.evidence_count,
+                    "assessor_id": s.assessor_id,
+                    "assessment_type": s.assessment_type,
+                    "dimension_scores": {k: float(v) for k, v in s.dimension_scores.items()},
+                }
+                for s in sorted(history, key=lambda x: x.timestamp)
+            ],
+        }
+        return {"result": json.dumps(result, indent=2)}
+    except Exception as e:
+        logger.error("tool_error", tool="get_assessment_history", error=str(e))
         return {"result": json.dumps({"error": str(e)})}
 
 

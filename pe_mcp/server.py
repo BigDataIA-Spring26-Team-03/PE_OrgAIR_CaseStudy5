@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -19,6 +20,11 @@ import logging
 
 import nest_asyncio
 nest_asyncio.apply()
+
+from src.services.observability.metrics import (
+    MCP_TOOL_CALLS,
+    MCP_TOOL_DURATION,
+)
 
 # Import installed MCP SDK (no shadow — we live in pe_mcp, not mcp)
 from mcp.server import Server
@@ -216,6 +222,31 @@ async def list_tools() -> List[Tool]:
             },
         ),
         Tool(
+            name="get_assessment_history",
+            description=(
+                "Retrieve the assessment history (timeline of Org-AI-R score snapshots) "
+                "for a company. Returns past assessments with timestamps, scores, "
+                "dimension breakdowns, and trend metrics (improving/stable/declining)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "company_id": {
+                        "type": "string",
+                        "description": "Company ticker symbol, e.g. 'NVDA'.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "default": 365,
+                        "minimum": 1,
+                        "maximum": 730,
+                        "description": "Lookback window in days.",
+                    },
+                },
+                "required": ["company_id"],
+            },
+        ),
+        Tool(
             name="refresh_company_data",
             description=(
                 "Force-refresh all evidence and re-score a company from scratch. "
@@ -243,7 +274,8 @@ async def list_tools() -> List[Tool]:
 async def call_tool(name: str, arguments: dict) -> List[TextContent]:
     """Route tool calls to the appropriate CS1-CS4 API."""
     logger.info("mcp_tool_call: tool=%s args=%s", name, arguments)
-
+    start = time.perf_counter()
+    success = True
     try:
         if name == "calculate_org_air_score":
             company_id = arguments["company_id"].upper().strip()
@@ -445,6 +477,41 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
+        elif name == "get_assessment_history":
+            company_id = arguments["company_id"].upper().strip()
+            days = int(arguments.get("days", 365))
+            history = await history_service.get_history(company_id, days=days)
+            trend = await history_service.calculate_trend(company_id)
+            result = {
+                "company_id": company_id,
+                "days": days,
+                "trend": {
+                    "current_org_air": trend.current_org_air,
+                    "entry_org_air": trend.entry_org_air,
+                    "delta_since_entry": trend.delta_since_entry,
+                    "delta_30d": trend.delta_30d,
+                    "delta_90d": trend.delta_90d,
+                    "trend_direction": trend.trend_direction,
+                    "snapshot_count": trend.snapshot_count,
+                },
+                "history": [
+                    {
+                        "assessed_at": s.timestamp.isoformat(),
+                        "org_air": float(s.org_air),
+                        "vr_score": float(s.vr_score),
+                        "hr_score": float(s.hr_score),
+                        "synergy_score": float(s.synergy_score),
+                        "confidence_interval": list(s.confidence_interval) if s.confidence_interval else [],
+                        "evidence_count": s.evidence_count,
+                        "assessor_id": s.assessor_id,
+                        "assessment_type": s.assessment_type,
+                        "dimension_scores": {k: float(v) for k, v in s.dimension_scores.items()},
+                    }
+                    for s in sorted(history, key=lambda x: x.timestamp)
+                ],
+            }
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
         elif name == "get_portfolio_summary":
             companies = await portfolio_data_service.get_portfolio_view(
                 arguments["fund_id"]
@@ -476,8 +543,14 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
     except Exception as exc:
+        success = False
+        MCP_TOOL_CALLS.labels(tool_name=name, status="error").inc()
         logger.error("mcp_tool_error: tool=%s error=%s", name, str(exc), exc_info=True)
         return [TextContent(type="text", text=f"Error executing '{name}': {exc}")]
+    finally:
+        if success:
+            MCP_TOOL_CALLS.labels(tool_name=name, status="success").inc()
+        MCP_TOOL_DURATION.labels(tool_name=name).observe(time.perf_counter() - start)
 
 
 @mcp_server.list_resources()

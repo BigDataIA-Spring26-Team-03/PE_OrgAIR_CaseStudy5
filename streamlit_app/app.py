@@ -94,6 +94,7 @@ page = st.sidebar.radio(
     [
         "🏠 Dashboard",
         "📊 Portfolio Intelligence (CS5)",
+        "📈 Assessment History",
         "🏢 Companies",
         "📋 Assessments",
         "📊 Dimension Scores",
@@ -264,6 +265,134 @@ elif page == "📊 Portfolio Intelligence (CS5)":
         import traceback
         with st.expander("Details"):
             st.code(traceback.format_exc())
+
+# ============================================
+# 📈 ASSESSMENT HISTORY
+# ============================================
+elif page == "📈 Assessment History":
+    st.markdown('<p class="main-header">📈 Assessment History</p>', unsafe_allow_html=True)
+    st.markdown("View Org-AI-R score snapshots and trend over time for any company.")
+
+    # Get list of tickers for selector
+    try:
+        companies = api.list_companies(limit=200)
+        ticker_options = ["— Select a company —"] + sorted(
+            [c.get("ticker", "").upper() for c in companies if c.get("ticker")],
+            key=lambda x: x
+        )
+    except Exception:
+        ticker_options = ["— Select a company —", "NVDA", "JPM", "WMT", "GE", "DG", "AAPL", "MSFT"]
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        ticker = st.selectbox(
+            "Company (Ticker)",
+            options=ticker_options,
+            key="assessment_history_ticker",
+        )
+    with col2:
+        days = st.selectbox(
+            "Lookback (days)",
+            options=[90, 180, 365, 730],
+            index=2,
+            key="assessment_history_days",
+        )
+
+    if ticker and ticker != "— Select a company —":
+        try:
+            data = api.get_assessment_history(ticker, days=days)
+            trend = data.get("trend", {})
+            history = data.get("history", [])
+
+            # Trend summary
+            st.markdown("### Trend Summary")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
+                st.metric("Current Org-AI-R", f"{trend.get('current_org_air', 0):.1f}", None)
+            with c2:
+                st.metric("Entry Score", f"{trend.get('entry_org_air', 0):.1f}", None)
+            with c3:
+                delta = trend.get("delta_since_entry") or 0
+                st.metric("Δ Since Entry", f"{delta:+.1f}", "pts")
+            with c4:
+                direction = trend.get("trend_direction", "—")
+                color = {"improving": "🟢", "declining": "🔴", "stable": "🟡"}.get(direction, "⚪")
+                st.metric("Trend", f"{color} {direction.title()}", None)
+            with c5:
+                st.metric("Snapshots", trend.get("snapshot_count", 0), None)
+
+            if trend.get("delta_30d") is not None:
+                st.caption(f"30-day Δ: {trend['delta_30d']:+.1f} pts  |  90-day Δ: {trend.get('delta_90d') or '—'} pts")
+
+            st.markdown("---")
+            st.markdown("### Timeline")
+
+            if history:
+                # Build timeline dataframe
+                rows = []
+                for h in history:
+                    rows.append({
+                        "Date": h.get("assessed_at", "")[:19].replace("T", " "),
+                        "Org-AI-R": h.get("org_air", 0),
+                        "V^R": h.get("vr_score", 0),
+                        "H^R": h.get("hr_score", 0),
+                        "Synergy": h.get("synergy_score", 0),
+                        "Evidence": h.get("evidence_count", 0),
+                        "Assessor": h.get("assessor_id", ""),
+                        "Type": h.get("assessment_type", ""),
+                    })
+                df = pd.DataFrame(rows)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                # Score over time chart
+                if len(history) >= 2:
+                    st.markdown("#### Org-AI-R Over Time")
+                    fig = px.line(
+                        pd.DataFrame([{
+                            "Date": h["assessed_at"][:10],
+                            "Org-AI-R": h["org_air"],
+                        } for h in history]),
+                        x="Date",
+                        y="Org-AI-R",
+                        markers=True,
+                    )
+                    fig.update_layout(height=300)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # Expandable detail per snapshot
+                st.markdown("#### Snapshot Details")
+                for i, h in enumerate(reversed(history)):
+                    with st.expander(
+                        f"{h.get('assessed_at', '')[:19]} — Org-AI-R: {h.get('org_air', 0):.1f} "
+                        f"(assessor: {h.get('assessor_id', '—')})"
+                    ):
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.write("**Scores:**")
+                            st.json({
+                                "org_air": h.get("org_air"),
+                                "vr_score": h.get("vr_score"),
+                                "hr_score": h.get("hr_score"),
+                                "synergy_score": h.get("synergy_score"),
+                                "confidence_interval": h.get("confidence_interval"),
+                            })
+                        with col_b:
+                            st.write("**Dimension Scores:**")
+                            st.json(h.get("dimension_scores") or {})
+                        st.caption(f"Evidence count: {h.get('evidence_count', 0)}  |  Type: {h.get('assessment_type', '')}")
+            else:
+                st.info(
+                    f"No assessment history for {ticker} in the last {days} days. "
+                    "Run a score (CS3) or use the backfill script to populate history."
+                )
+                st.code("poetry run python scripts/backfill_history.py")
+        except Exception as e:
+            st.error(f"Failed to load assessment history: {e}")
+            import traceback
+            with st.expander("Details"):
+                st.code(traceback.format_exc())
+    else:
+        st.info("Select a company to view its assessment history.")
 
 # ============================================
 # 🏢 COMPANIES (CS1)

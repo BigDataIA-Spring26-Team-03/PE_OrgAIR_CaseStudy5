@@ -39,3 +39,4 @@ class DueDiligenceState(TypedDict):
     completed_at: Optional[str]
     total_tokens: int
     error: Optional[str]
+    

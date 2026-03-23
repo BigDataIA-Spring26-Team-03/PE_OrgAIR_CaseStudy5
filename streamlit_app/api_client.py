@@ -301,6 +301,15 @@ class APIClient:
         )
         return self._handle_response(response).json()
 
+    def get_assessment_history(self, ticker: str, days: int = 365) -> dict:
+        """Get assessment history and trend for a company."""
+        response = requests.get(
+            f"{self.base_url}/api/v1/assessment-history/{ticker.upper()}",
+            params={"days": days},
+            timeout=30,
+        )
+        return self._handle_response(response).json()
+
     def get_ic_prep(self, ticker: str, focus_dimensions: list = None) -> dict:
         """Get full IC meeting preparation package."""
         payload = {}

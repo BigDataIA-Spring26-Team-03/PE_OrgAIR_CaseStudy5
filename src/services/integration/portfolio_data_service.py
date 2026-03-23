@@ -140,38 +140,29 @@ class PortfolioDataService:
                 elif isinstance(payload, (int, float)):
                     dimension_scores[str(dim)] = float(payload)
 
-            entry_org_air = 45.0
-
-            # Record history snapshot — runs in same thread as _score_one_ticker
-            # Uses asyncio since we are already inside an async method
+            # Fetch entry_org_air from assessment history (oldest snapshot).
+            # Fall back to current org_air (delta=0) when no history or on error.
+            entry_org_air = org_air
+            company_name = ticker
             try:
-                async with CS1Client() as _cs1:
-                    async with CS3Client() as _cs3:
-                        _hist = create_history_service(_cs1, _cs3)
-                        await _hist.record_assessment(
+                async with CS1Client() as cs1:
+                    async with CS3Client() as cs3:
+                        hist = create_history_service(cs1, cs3)
+                        trend = await hist.calculate_trend(ticker)
+                        entry_org_air = float(trend.entry_org_air)
+                        await hist.record_assessment(
                             company_id=ticker,
                             assessor_id="portfolio-data-service",
                             assessment_type="full",
                         )
-            except Exception as hist_exc:
+                        company = await cs1.get_company(ticker)
+                        if company and company.name:
+                            company_name = company.name
+            except Exception as exc:
                 logger.warning(
-                    "portfolio_history_record_failed: ticker=%s error=%s",
-                    ticker, hist_exc,
-                )
-
-            # Fetch real company name from CS1
-            company_name = ticker  # safe default if CS1 call fails
-            try:
-                from src.services.integration.cs1_client import CS1Client
-                async with CS1Client() as cs1:
-                    company = await cs1.get_company(ticker)
-                    if company and company.name:
-                        company_name = company.name
-            except Exception as name_exc:
-                logger.warning(
-                    "cs1_name_lookup_failed: ticker=%s error=%s — "
-                    "falling back to ticker as name",
-                    ticker, name_exc,
+                    "portfolio_history_or_name_failed: ticker=%s error=%s — "
+                    "using current score as entry, ticker as name",
+                    ticker, exc,
                 )
 
             return PortfolioCompanyView(
