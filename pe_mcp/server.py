@@ -8,7 +8,10 @@ GPT-4, or any MCP-compatible client can call your platform.
 Entry point: python -m pe_mcp.server
 """
 from __future__ import annotations
+from dotenv import load_dotenv
+from pathlib import Path
 
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 import asyncio
 import json
 import time
@@ -17,9 +20,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import logging
-
-import nest_asyncio
-nest_asyncio.apply()
+from dotenv import load_dotenv
+from pathlib import Path
 
 from src.services.observability.metrics import (
     MCP_TOOL_CALLS,
