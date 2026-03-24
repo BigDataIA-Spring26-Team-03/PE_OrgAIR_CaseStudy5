@@ -65,19 +65,27 @@ async def calculate_org_air_score(req: ToolRequest):
 @http_app.post("/tools/get_company_evidence")
 async def get_company_evidence(req: ToolRequest):
     try:
-        docs = await asyncio.to_thread(
-            retriever.search,
-            query=req.dimension if req.dimension != "all" else "AI readiness",
-            top_k=req.limit,
-            company_id=req.company_id or None,
-            dimension=req.dimension if req.dimension != "all" else None,
-        )
+        from src.services.search.vector_store import VectorStore
+        store = VectorStore()
+
+        # Build search kwargs
+        search_kwargs = {
+            "query": req.dimension if req.dimension != "all" else "AI readiness artificial intelligence machine learning",
+            "top_k": req.limit,
+            "company_id": req.company_id,
+        }
+        if req.dimension != "all":
+            search_kwargs["dimension"] = req.dimension
+
+        results = await asyncio.to_thread(store.search, **search_kwargs)
+
         return {"result": json.dumps([{
-            "source_type": d.metadata.get("source_type", ""),
-            "content": d.content[:500],
-            "confidence": d.metadata.get("confidence", 0.0),
-            "signal_category": d.metadata.get("signal_category", ""),
-        } for d in docs])}
+            "source_type": r.metadata.get("source_type", ""),
+            "content": r.content[:500],
+            "confidence": r.metadata.get("confidence", 0.0),
+            "signal_category": r.metadata.get("signal_category", ""),
+            "dimension": r.metadata.get("dimension", ""),
+        } for r in results])}
     except Exception as e:
         logger.error("tool_error", tool="get_company_evidence", error=str(e))
         return {"result": json.dumps({"error": str(e)})}

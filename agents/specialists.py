@@ -52,7 +52,7 @@ mcp_client = ToolCaller()
 
 class SECAnalysisAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     async def analyze(self, state: DueDiligenceState) -> Dict[str, Any]:
         """
@@ -96,7 +96,7 @@ class SECAnalysisAgent:
 
 class ScoringAgent:
     def __init__(self):
-        self.llm = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0.2)
+        self.llm = ChatAnthropic(model="claude-3-5-haiku-20241022", temperature=0.2)
 
     async def calculate(self, state: DueDiligenceState) -> Dict[str, Any]:
         """
@@ -146,7 +146,7 @@ class ScoringAgent:
 
 class EvidenceAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     async def justify(self, state: DueDiligenceState) -> Dict[str, Any]:
         """
@@ -155,7 +155,15 @@ class EvidenceAgent:
         3. Return partial state dict
         """
         company_id = state.get("company_id", "")
-        dimensions = ["data_infrastructure", "talent", "use_case_portfolio"]
+        dimensions = [
+            "data_infrastructure",
+            "ai_governance",
+            "technology_stack",
+            "talent",
+            "leadership",
+            "use_case_portfolio",
+            "culture",
+        ]
         justifications: Dict[str, Any] = {}
 
         for dim in dimensions:
@@ -187,7 +195,7 @@ class EvidenceAgent:
 
 class ValueCreationAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     async def plan(self, state: DueDiligenceState) -> Dict[str, Any]:
         """

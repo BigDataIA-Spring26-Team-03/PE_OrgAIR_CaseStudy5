@@ -707,24 +707,18 @@ async def list_prompts() -> List[Prompt]:
         Prompt(
             name="due_diligence_assessment",
             description=(
-                "Step-by-step due diligence workflow for a single portfolio company.  "
-                "Guides the agent through scoring, evidence retrieval, gap analysis, "
-                "and EBITDA projection."
+                "Step-by-step due diligence workflow for a portfolio company. "
+                "Just add the prompt, then tell Claude which ticker (e.g. NVDA)."
             ),
-            arguments=[
-                {"name": "company_id", "required": True},
-            ],
+            arguments=[],  # No form — specify company in chat
         ),
         Prompt(
             name="ic_meeting_prep",
             description=(
-                "Investment Committee meeting preparation package.  Produces a "
-                "structured agenda covering Org-AI-R highlights, top risks, and "
-                "value-creation initiatives."
+                "Investment Committee meeting package. "
+                "Just add the prompt, then tell Claude which ticker (e.g. JPM)."
             ),
-            arguments=[
-                {"name": "company_id", "required": True},
-            ],
+            arguments=[],  # No form — specify company in chat
         ),
     ]
 
@@ -732,14 +726,15 @@ async def list_prompts() -> List[Prompt]:
 @mcp_server.get_prompt()
 async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
     """Return the prompt messages for the requested template."""
-    company_id = arguments.get("company_id", "<company_id>")
+    company_id = arguments.get("company_id") or "the company the user specifies"
 
     if name == "due_diligence_assessment":
         return [
             PromptMessage(
                 role="user",
                 content=TextContent(type="text", text=(
-                    f"Perform a full Org-AI-R due diligence for **{company_id}**.\n\n"
+                    f"Perform a full Org-AI-R due diligence for **{company_id}**. "
+                    "If the user has not yet specified a company, ask them for the ticker (e.g. NVDA, MSFT).\n\n"
                     "Follow these steps in order:\n"
                     "1. Call `calculate_org_air_score` to get the current Org-AI-R score "
                     "and dimension breakdown.\n"
@@ -760,7 +755,8 @@ async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
             PromptMessage(
                 role="user",
                 content=TextContent(type="text", text=(
-                    f"Prepare an Investment Committee package for **{company_id}**.\n\n"
+                    f"Prepare an Investment Committee package for **{company_id}**. "
+                    "If the user has not yet specified a company, ask them for the ticker (e.g. NVDA, JPM).\n\n"
                     "Structure:\n"
                     "1. **Org-AI-R Snapshot** — current score, trend, and confidence "
                     "interval (use `calculate_org_air_score`).\n"
