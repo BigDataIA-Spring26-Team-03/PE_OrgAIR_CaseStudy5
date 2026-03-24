@@ -55,42 +55,96 @@ class SECAnalysisAgent:
         self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     async def analyze(self, state: DueDiligenceState) -> Dict[str, Any]:
-        """
-        1. Get company_id from state
-        2. Call mcp_client.call_tool("get_company_evidence", ...)
-        3. Parse the result as JSON
-        4. Return partial state dict
-        """
-        company_id = state.get("company_id", "")
-        raw = await mcp_client.call_tool(
-            "get_company_evidence",
-            {"company_id": company_id, "dimension": "all", "limit": 10},
-        )
-        try:
-            findings = json.loads(raw) if isinstance(raw, str) else raw
-            if not isinstance(findings, list):
-                findings = []
-        except (json.JSONDecodeError, TypeError):
-            findings = []
+        company_id = state["company_id"]
+
+        # Fetch only SEC filing evidence across all relevant dimensions
+        sec_findings = []
+        for dimension in ["data_infrastructure", "ai_governance",
+                          "technology_stack", "leadership", "use_case_portfolio"]:
+            raw = await mcp_client.call_tool(
+                "get_company_evidence",
+                {"company_id": company_id, "dimension": dimension, "limit": 10}
+            )
+            try:
+                findings = json.loads(raw) if raw else []
+                if isinstance(findings, list):
+                    sec_only = [
+                        f for f in findings
+                        if any(s in f.get("source_type", "")
+                               for s in ["sec_10k", "sec_10q", "sec_8k", "sec"])
+                    ]
+                    sec_findings.extend(sec_only)
+            except Exception:
+                pass
 
         return {
             "sec_analysis": {
                 "company_id": company_id,
-                "findings": findings,
+                "findings": sec_findings,
                 "dimensions_covered": [
-                    "data_infrastructure",
-                    "ai_governance",
-                    "technology_stack",
+                    "data_infrastructure", "ai_governance",
+                    "technology_stack", "leadership", "use_case_portfolio"
                 ],
             },
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": f"SEC analysis complete for {company_id}. Found {len(findings)} evidence items.",
-                    "agent_name": "sec_analyst",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-            ],
+            "messages": [{
+                "role": "assistant",
+                "content": f"SEC analysis complete for {company_id}. Found {len(sec_findings)} SEC filing evidence items.",
+                "agent_name": "sec_analyst",
+                "timestamp": datetime.utcnow().isoformat(),
+            }],
+        }
+
+
+class TalentAgent:
+    """
+    Fetches all non-SEC evidence across all 7 dimensions.
+    Covers: job postings, patents, Glassdoor, board composition,
+    leadership signals, tech stack signals.
+    """
+    def __init__(self):
+        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+
+    async def analyze(self, state: DueDiligenceState) -> Dict[str, Any]:
+        company_id = state["company_id"]
+
+        # Fetch all non-SEC evidence across all 7 dimensions
+        all_findings = []
+        for dimension in [
+            "data_infrastructure", "ai_governance", "technology_stack",
+            "talent", "leadership", "use_case_portfolio", "culture"
+        ]:
+            raw = await mcp_client.call_tool(
+                "get_company_evidence",
+                {"company_id": company_id, "dimension": dimension, "limit": 20}
+            )
+            try:
+                findings = json.loads(raw) if raw else []
+                if isinstance(findings, list):
+                    # Exclude SEC source types — get everything else
+                    non_sec = [
+                        f for f in findings
+                        if not any(s in f.get("source_type", "")
+                                   for s in ["sec_10k", "sec_10q", "sec_8k", "sec"])
+                    ]
+                    all_findings.extend(non_sec)
+            except Exception:
+                pass
+
+        return {
+            "talent_analysis": {
+                "company_id": company_id,
+                "findings": all_findings,
+                "dimensions_covered": [
+                    "data_infrastructure", "ai_governance", "technology_stack",
+                    "talent", "leadership", "use_case_portfolio", "culture"
+                ],
+            },
+            "messages": [{
+                "role": "assistant",
+                "content": f"Talent & signals analysis complete for {company_id}. Found {len(all_findings)} non-SEC evidence items across all 7 dimensions.",
+                "agent_name": "talent_analyst",
+                "timestamp": datetime.utcnow().isoformat(),
+            }],
         }
 
 
@@ -118,14 +172,37 @@ class ScoringAgent:
         except (json.JSONDecodeError, TypeError):
             score_data = {}
 
+        if not score_data or "org_air" not in score_data:
+            score_data = {
+                **score_data,
+                "error": (
+                    score_data.get("error")
+                    or "calculate_org_air_score failed — start MCP HTTP bridge: "
+                    "poetry run python -m pe_mcp.http_server (port 3000)"
+                ),
+                "org_air": float(score_data["org_air"])
+                if score_data.get("org_air") is not None
+                else 0.0,
+            }
+
         org_air = float(score_data.get("org_air", 0))
-        requires_approval = org_air > 85 or org_air < 40
-        if requires_approval:
-            approval_reason = f"Score {org_air:.1f} outside normal range [40, 85]"
-            approval_status = "pending"
-        else:
+
+        if score_data.get("error") and "vr_score" not in score_data:
+            requires_approval = False
             approval_reason = None
             approval_status = None
+            msg = f"Scoring failed: {score_data['error']}"
+        else:
+            requires_approval = org_air > 85 or org_air < 40
+            if requires_approval:
+                approval_reason = f"Score {org_air:.1f} outside normal range [40, 85]"
+                approval_status = "pending"
+            else:
+                approval_reason = None
+                approval_status = None
+            msg = f"Scoring complete: Org-AI-R = {org_air:.1f}" + (
+                " [REQUIRES APPROVAL]" if requires_approval else ""
+            )
 
         return {
             "scoring_result": score_data,
@@ -135,8 +212,7 @@ class ScoringAgent:
             "messages": [
                 {
                     "role": "assistant",
-                    "content": f"Scoring complete: Org-AI-R = {org_air:.1f}"
-                    + (" [REQUIRES APPROVAL]" if requires_approval else ""),
+                    "content": msg,
                     "agent_name": "scorer",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
@@ -246,6 +322,7 @@ class ValueCreationAgent:
 
 
 sec_agent = SECAnalysisAgent()
+talent_agent = TalentAgent()
 scoring_agent = ScoringAgent()
 evidence_agent = EvidenceAgent()
 value_agent = ValueCreationAgent()

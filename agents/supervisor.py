@@ -16,12 +16,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from agents.state import DueDiligenceState
-from agents.specialists import (
-    evidence_agent,
-    scoring_agent,
-    sec_agent,
-    value_agent,
-)
+from agents.specialists import sec_agent, scoring_agent, evidence_agent, value_agent, talent_agent
 from src.services.observability.metrics import (
     track_agent,
     HITL_APPROVALS,
@@ -42,6 +37,8 @@ async def supervisor_node(state: DueDiligenceState) -> Dict[str, Any]:
 
     if not state.get("sec_analysis"):
         return {"next_agent": "sec_analyst"}
+    elif not state.get("talent_analysis"):
+        return {"next_agent": "talent_analyst"}
     elif not state.get("scoring_result"):
         return {"next_agent": "scorer"}
     elif not state.get("evidence_justifications"):
@@ -59,6 +56,10 @@ async def supervisor_node(state: DueDiligenceState) -> Dict[str, Any]:
 async def sec_analyst_node(state: DueDiligenceState) -> Dict[str, Any]:
     logger.info("agent_start", agent="sec_analyst", company=state.get("company_id"))
     return await sec_agent.analyze(state)
+
+
+async def talent_analyst_node(state: DueDiligenceState) -> Dict[str, Any]:
+    return await talent_agent.analyze(state)
 
 
 @track_agent("scorer")
@@ -143,6 +144,7 @@ def create_due_diligence_graph():
     # Register nodes
     workflow.add_node("supervisor",     supervisor_node)
     workflow.add_node("sec_analyst",    sec_analyst_node)
+    workflow.add_node("talent_analyst", talent_analyst_node)
     workflow.add_node("scorer",         scorer_node)
     workflow.add_node("evidence_agent", evidence_node)
     workflow.add_node("value_creator",  value_creator_node)
@@ -155,6 +157,7 @@ def create_due_diligence_graph():
         lambda s: s["next_agent"],
         {
             "sec_analyst":    "sec_analyst",
+            "talent_analyst": "talent_analyst",
             "scorer":         "scorer",
             "evidence_agent": "evidence_agent",
             "value_creator":  "value_creator",
@@ -166,6 +169,7 @@ def create_due_diligence_graph():
     # All specialist agents return to supervisor after finishing
     for agent_node in ["sec_analyst", "scorer", "evidence_agent", "value_creator"]:
         workflow.add_edge(agent_node, "supervisor")
+    workflow.add_edge("talent_analyst", "supervisor")
 
     # HITL returns to supervisor so routing can resume
     workflow.add_edge("hitl_approval", "supervisor")
