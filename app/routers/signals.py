@@ -23,6 +23,10 @@ from app.pipelines.job_signals import scrape_job_postings, job_postings_to_signa
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
 from app.pipelines.patent_signals import collect_patent_signals_real
 from app.pipelines.external_signals_orchestrator import build_company_signal_summary
+from app.pipelines.leadership_signals import (
+    scrape_leadership_profiles,
+    leadership_profiles_to_aggregated_signal,
+)
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -46,7 +50,7 @@ async def collect_all_signals(
     1. Jobs: Searches 10+ AI/ML job types
     2. Tech Stack: Scrapes company website for AI technologies
     3. Patents: Calls USPTO API for AI patents
-    4. Leadership: Uses latest board governance signal persisted in Snowflake
+    4. Leadership: Board governance (SEC DEF 14A) + scraped exec/hiring signals
 
     Then:
     - Inserts all signals into external_signals table
@@ -84,7 +88,7 @@ async def collect_all_signals(
                 "jobs": "10+ AI/ML role types, unlimited results",
                 "tech_stack": "Full website technology scan",
                 "patents": f"All AI patents ({years} years)",
-                "leadership": "From board governance signal (Snowflake)",
+                "leadership": "Board governance (SEC DEF 14A) + scraped exec/hiring signals",
             },
             "note": "Collection running in background. Check /api/v1/signals/summary for results.",
         }
@@ -345,11 +349,6 @@ def _fetch_category_scores_from_db(db: SnowflakeService, company_id: str) -> dic
 
 
 def _count_total_signals(db: SnowflakeService, company_id: str) -> int:
-    """
-    Total number of signals for a company in external_signals.
-    We use this for company_signal_summaries.signal_count so the upsert doesn't
-    depend on "inserted_count this run".
-    """
     rows = db.execute_query(
         """
         SELECT COUNT(*) AS n
@@ -369,6 +368,7 @@ def _leadership_signal_from_latest_board(
     """
     Create ONE aggregated leadership_signals ExternalSignal from the latest
     board_governance_signals row for this company.
+    Internal evidence source: SEC DEF 14A proxy statement via Snowflake.
     """
     rows = db.execute_query(
         """
@@ -419,8 +419,6 @@ def _leadership_signal_from_latest_board(
         "created_at": str(r.get("created_at")),
     }
 
-    meta_json = json.dumps(meta, default=str)
-
     return ExternalSignal(
         id=f"{company_id}-leadership-board-{r.get('id')}",
         company_id=company_id,
@@ -430,7 +428,7 @@ def _leadership_signal_from_latest_board(
         score=int(round(float(r.get("governance_score") or 0.0))),
         title="Board governance & AI oversight (SEC DEF 14A)",
         url=None,
-        metadata_json=meta_json,
+        metadata_json=json.dumps(meta, default=str),
     )
 
 
@@ -440,9 +438,7 @@ def _leadership_signal_from_latest_board(
 
 @router.post("/collect/internal/run/{ticker}")
 async def run_collection_inline_for_debug(ticker: str):
-    """
-    Optional helper to run collection inline without BackgroundTasks.
-    """
+    """Optional helper to run collection inline without BackgroundTasks."""
     db = SnowflakeService()
     try:
         companies = db.execute_query(
@@ -577,17 +573,43 @@ async def run_comprehensive_collection_task(
             logger.exception("Patent collection failed", error=str(e))
 
         # ========================================
-        # 4. LEADERSHIP (REAL: from board_governance_signals)
+        # 4. LEADERSHIP (board governance + scraped exec/hiring signals)
         # ========================================
+
+        # --- 4a. INTERNAL: board governance signal (SEC DEF 14A via Snowflake) ---
         try:
-            leadership_signal = _leadership_signal_from_latest_board(db, company_id=company_id, ticker=ticker)
-            if leadership_signal:
-                all_signals.append(leadership_signal)
-                logger.info("✅ Leadership aggregated (from board)", score=leadership_signal.score)
+            board_signal = _leadership_signal_from_latest_board(db, company_id=company_id, ticker=ticker)
+            if board_signal:
+                all_signals.append(board_signal)
+                logger.info("✅ Leadership board signal added", score=board_signal.score)
             else:
-                logger.warning("⚠️ No board governance signal found; leadership score will be 0", ticker=ticker)
+                logger.warning("⚠️ No board governance signal found for leadership", ticker=ticker)
         except Exception as e:
-            logger.exception("❌ Leadership pipeline failed", error=str(e))
+            logger.exception("❌ Leadership board signal failed", error=str(e))
+
+        # --- 4b. EXTERNAL: scrape company leadership page + careers page ---
+        try:
+            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
+            if domain:
+                base_url = f"https://{domain}" if not domain.startswith("http") else domain
+                exec_profiles = scrape_leadership_profiles(company=company_name, base_url=base_url, ticker=ticker)
+                if exec_profiles:
+                    scraped_signal = leadership_profiles_to_aggregated_signal(
+                        company_id=company_id,
+                        executives=exec_profiles,
+                    )
+                    all_signals.append(scraped_signal)
+                    logger.info(
+                        "✅ Leadership scraped signal added",
+                        score=scraped_signal.score,
+                        exec_count=len(exec_profiles),
+                    )
+                else:
+                    logger.warning("⚠️ Scraper returned 0 profiles", ticker=ticker)
+            else:
+                logger.warning("⚠️ No domain found, skipping scraped leadership signals", ticker=ticker)
+        except Exception as e:
+            logger.exception("❌ Leadership scrape failed", error=str(e))
 
         # ========================================
         # STORE IN SNOWFLAKE + RE-AGGREGATE SCORES FROM DB
