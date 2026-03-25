@@ -55,6 +55,25 @@ class CS4Client:
         return await self._generator.generate_justification(company_id, dimension)
 
 
-# Module-level singleton — consistent with ebitda_calculator / gap_analyzer
-# pattern.  MCP server imports this directly.
-cs4_client = CS4Client()
+# Lazy singleton — delays SentenceTransformer + ChromaDB initialization
+# until the first generate_justification call so MCP server startup is fast.
+class _LazyCS4Client:
+    """Proxy that creates CS4Client on first use, not at import time."""
+
+    def __init__(self) -> None:
+        self._client: CS4Client | None = None
+
+    def _get(self) -> CS4Client:
+        if self._client is None:
+            self._client = CS4Client()
+        return self._client
+
+    async def generate_justification(
+        self,
+        company_id: str,
+        dimension: str | Dimension,
+    ) -> ScoreJustification:
+        return await self._get().generate_justification(company_id, dimension)
+
+
+cs4_client = _LazyCS4Client()

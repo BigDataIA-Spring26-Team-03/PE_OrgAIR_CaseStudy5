@@ -269,6 +269,33 @@ async def list_tools() -> List[Tool]:
                 "required": ["company_id"],
             },
         ),
+        Tool(
+            name="read_orgair_resource",
+            description=(
+                "Read a specific Org-AI-R resource by URI. "
+                "Available URIs: "
+                "orgair://parameters/v2.0 — scoring constants (alpha, beta, gamma). "
+                "orgair://sectors — sector baselines and H^R weights. "
+                "orgair://companies — live list of all portfolio companies from CS1. "
+                "orgair://company/NVDA — metadata for a specific company (replace NVDA with any ticker)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "description": (
+                            "Resource URI to read. Examples: "
+                            "orgair://parameters/v2.0, "
+                            "orgair://sectors, "
+                            "orgair://companies, "
+                            "orgair://company/NVDA"
+                        ),
+                    },
+                },
+                "required": ["uri"],
+            },
+        ),
     ]
 
 
@@ -354,6 +381,18 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     "via on-demand pipeline", company_id
                 )
                 await on_demand.get_or_score_company(company_id)
+
+            # Auto-index CS2 evidence so ChromaDB has data for any company.
+            # Safe to call every time — ChromaDB upserts, no duplicates.
+            try:
+                await on_demand.ensure_evidence_indexed(company_id)
+            except Exception as idx_exc:
+                logger.warning(
+                    "evidence_index_failed: company=%s error=%s — "
+                    "justification may have weak evidence",
+                    company_id, idx_exc,
+                )
+
             justification = await cs4_client.generate_justification(
                 company_id=company_id,
                 dimension=arguments["dimension"],
@@ -540,6 +579,20 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                 ],
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "read_orgair_resource":
+            uri = arguments.get("uri", "").strip()
+            if not uri:
+                return [TextContent(type="text",
+                                    text="Error: uri argument is required")]
+            try:
+                content = await read_resource(uri)
+                return [TextContent(type="text", text=content)]
+            except Exception as exc:
+                return [TextContent(
+                    type="text",
+                    text=f"Error reading resource '{uri}': {exc}"
+                )]
 
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -776,7 +829,20 @@ async def get_prompt(name: str, arguments: dict) -> List[PromptMessage]:
 
 async def main() -> None:
     """Run the MCP server over stdio transport (default for Claude Desktop)."""
+    import sys
+
+    logging.basicConfig(
+        level=logging.WARNING,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
     async with stdio_server() as (read_stream, write_stream):
+        # Redirect sys.stdout → stderr AFTER stdio_server has captured
+        # sys.stdout.buffer for its write stream.  Any stray print() from
+        # yfinance / pipeline code now goes to stderr, not the JSON-RPC pipe.
+        sys.stdout = sys.stderr
+
         await mcp_server.run(
             read_stream,
             write_stream,
