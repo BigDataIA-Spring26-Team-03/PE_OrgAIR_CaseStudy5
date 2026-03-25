@@ -311,6 +311,14 @@ class OnDemandScoringService:
                 ticker, exc,
             )
 
+    async def ensure_evidence_indexed(self, ticker: str) -> None:
+        """
+        Public wrapper: ensure CS2 evidence for ticker is indexed in ChromaDB.
+        Safe to call multiple times — ChromaDB upserts (no duplicates).
+        Called by generate_justification before CS4 RAG search.
+        """
+        await self._index_evidence(ticker)
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers (pure functions, no state)
@@ -358,7 +366,7 @@ def _register_company(ticker: str, sector: str) -> dict:
     """
     Register company in Snowflake and return its metadata dict.
     """
-    from scoring.integration_service import ScoringIntegrationService
+    from src.scoring.integration_service import ScoringIntegrationService
     svc = ScoringIntegrationService()
     return svc.fetch_company(ticker)
 
@@ -367,7 +375,7 @@ def _run_scoring(ticker: str, sector: str) -> None:
     """
     Run ScoringIntegrationService.score_company() synchronously.
     """
-    from scoring.integration_service import ScoringIntegrationService
+    from src.scoring.integration_service import ScoringIntegrationService
 
     svc    = ScoringIntegrationService()
     result = svc.score_company(ticker, sector)

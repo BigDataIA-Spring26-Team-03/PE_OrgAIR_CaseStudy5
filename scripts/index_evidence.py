@@ -26,7 +26,7 @@ from src.services.integration.cs2_client import (
 )
 
 BASE_URL = "http://localhost:8000"
-COMPANIES = ["NVDA", "JPM", "WMT", "GE", "DG"]
+_FALLBACK_TICKERS = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
 def raw_to_cs2evidence(raw: dict) -> CS2Evidence | None:
     try:
@@ -62,6 +62,39 @@ async def mark_indexed(evidence_ids: list[str]) -> None:
         )
         response.raise_for_status()
 
+async def fetch_all_tickers() -> list[str]:
+    """Fetch all company tickers from CS1 API with fallbacks."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{BASE_URL}/api/v1/companies",
+                params={"limit": 500, "offset": 0},
+            )
+            response.raise_for_status()
+            data = response.json()
+            companies = data if isinstance(data, list) else data.get("items", data.get("results", []))
+            tickers = [
+                str(c.get("ticker", "")).strip().upper()
+                for c in (companies or [])
+                if c.get("ticker")
+            ]
+            if tickers:
+                print(f"📋 Loaded {len(tickers)} tickers from CS1 API: {tickers}")
+                return tickers
+    except Exception as exc:
+        print(f"⚠️  CS1 API unavailable: {exc}")
+
+    env_tickers = os.getenv("PORTFOLIO_TICKERS", "").strip()
+    if env_tickers:
+        tickers = [t.strip().upper() for t in env_tickers.split(",") if t.strip()]
+        if tickers:
+            print(f"📋 Loaded {len(tickers)} tickers from PORTFOLIO_TICKERS env var")
+            return tickers
+
+    print(f"⚠️  Using hardcoded fallback: {_FALLBACK_TICKERS}")
+    return _FALLBACK_TICKERS
+
+
 async def main():
     print("🚀 Starting evidence indexing pipeline...\n")
 
@@ -69,7 +102,8 @@ async def main():
     mapper = DimensionMapper()
     total_indexed = 0
 
-    for ticker in COMPANIES:
+    companies = await fetch_all_tickers()
+    for ticker in companies:
         print(f"📊 Processing {ticker}...")
 
         try:
@@ -113,7 +147,8 @@ async def main():
         print()
 
     print(f"✅ Done! Total evidence indexed: {total_indexed}")
-    print(f"📁 ChromaDB stored at: ./chroma_data")
+    chroma_path = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
+    print(f"📁 ChromaDB stored at: {chroma_path}")
     print(f"\nNow test search:")
     print(f'  curl "http://localhost:8000/api/v1/search?query=AI+talent&company_id=NVDA"')
 

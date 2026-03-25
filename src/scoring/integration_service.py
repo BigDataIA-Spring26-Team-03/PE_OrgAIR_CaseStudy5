@@ -138,6 +138,38 @@ class ScoringIntegrationService:
         logger.warning("company_not_found", ticker=ticker)
         return self.register_company(ticker)
 
+    # Maps yfinance sector strings → industry table name (fuzzy)
+    _SECTOR_TO_INDUSTRY = {
+        "Technology":             "Business Services",
+        "Communication Services": "Business Services",
+        "Financial Services":     "Financial Services",
+        "Consumer Defensive":     "Retail",
+        "Consumer Cyclical":      "Retail",
+        "Industrials":            "Manufacturing",
+        "Basic Materials":        "Manufacturing",
+        "Healthcare":             "Healthcare Services",
+        "Energy":                 "Manufacturing",
+        "Real Estate":            "Business Services",
+        "Utilities":              "Business Services",
+    }
+
+    def _resolve_industry_id(self, sector: str) -> str | None:
+        """Return an industry_id from the DB that best matches the yfinance sector."""
+        from app.services.snowflake import db
+        industry_name = self._SECTOR_TO_INDUSTRY.get(sector)
+        if industry_name:
+            rows = db.execute_query(
+                "SELECT id FROM industries WHERE name = %(name)s LIMIT 1",
+                {"name": industry_name},
+            )
+            if rows:
+                return str(rows[0].get("id") or rows[0].get("ID"))
+        # Fallback: first industry in the table
+        rows = db.execute_query("SELECT id FROM industries LIMIT 1")
+        if rows:
+            return str(rows[0].get("id") or rows[0].get("ID"))
+        return None
+
     def register_company(self, ticker: str, sector: str = "Unknown") -> Dict[str, Any]:
         """Auto-register an unknown ticker in Snowflake using yfinance metadata."""
         from app.services.snowflake import db
@@ -151,15 +183,16 @@ class ScoringIntegrationService:
             logger.warning("yfinance_lookup_failed", ticker=ticker, error=str(exc))
             name = ticker
         company_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, ticker))
+        industry_id = self._resolve_industry_id(sector)
         try:
             db.execute_update(
                 """
-                INSERT INTO companies (id, name, ticker, position_factor, is_deleted, created_at, updated_at)
-                VALUES (%(id)s, %(name)s, %(ticker)s, 0.0, FALSE, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                INSERT INTO companies (id, name, ticker, industry_id, position_factor, is_deleted, created_at, updated_at)
+                VALUES (%(id)s, %(name)s, %(ticker)s, %(industry_id)s, 0.0, FALSE, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
                 """,
-                {"id": company_id, "name": name, "ticker": ticker},
+                {"id": company_id, "name": name, "ticker": ticker, "industry_id": industry_id},
             )
-            logger.info("company_registered", ticker=ticker, name=name, company_id=company_id)
+            logger.info("company_registered", ticker=ticker, name=name, company_id=company_id, industry_id=industry_id)
         except Exception as exc:
             logger.warning("company_insert_failed", ticker=ticker, error=str(exc))
         return {"id": company_id, "ticker": ticker, "name": name, "sector": sector}
