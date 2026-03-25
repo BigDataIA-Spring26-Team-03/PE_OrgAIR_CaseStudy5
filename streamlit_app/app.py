@@ -266,6 +266,57 @@ elif page == "📊 Portfolio Intelligence (CS5)":
         with st.expander("Details"):
             st.code(traceback.format_exc())
 
+    st.divider()
+    st.subheader("📄 IC Memo Generator")
+
+    selected_memo_ticker = st.selectbox(
+        "Select company for IC Memo",
+        ["NVDA", "JPM", "WMT", "GE", "DG"],
+        key="memo_ticker"
+    )
+
+    if st.button("Generate IC Memo for " + selected_memo_ticker):
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+            import asyncio
+            from src.services.reporting.ic_memo import ic_memo_generator
+            from exercises.agentic_due_diligence import run_due_diligence
+
+            with st.spinner(f"Running full due diligence for {selected_memo_ticker}... (2-3 mins)"):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(
+                        run_due_diligence(selected_memo_ticker, "full")
+                    )
+                    memo_path = ic_memo_generator.generate_memo(result)
+                finally:
+                    loop.close()
+
+            if memo_path:
+                with open(memo_path, "rb") as f:
+                    st.download_button(
+                        label=f"⬇️ Download {selected_memo_ticker} IC Memo (.docx)",
+                        data=f.read(),
+                        file_name=f"{selected_memo_ticker}_IC_Memo.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )
+                st.success(f"✅ IC Memo generated for {selected_memo_ticker}!")
+
+                # Show summary from the workflow
+                scoring = result.get("scoring_result") or {}
+                org_air = scoring.get("org_air", "N/A")
+                if isinstance(org_air, (int, float)):
+                    st.metric("Org-AI-R Score", f"{org_air:.1f}")
+
+            else:
+                st.error("Memo generation failed — check python-docx is installed")
+
+        except Exception as e:
+            st.error(f"Error generating memo: {e}")
+            st.info("Make sure FastAPI (port 8000) and MCP bridge (port 3000) are running")
+
 # ============================================
 # 📈 ASSESSMENT HISTORY
 # ============================================

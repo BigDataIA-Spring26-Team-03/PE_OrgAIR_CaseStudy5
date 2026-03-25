@@ -146,7 +146,7 @@ class BoardCompositionCollector:
         result = {
             "ticker": ticker,
             "source_meta": {
-                "cik": get_cik_for_ticker(ticker) or "",
+                "cik": lookup_cik(ticker) or "",
                 "filing_type": "DEF 14A",
                 "collected_at": datetime.now().isoformat(),
             },
