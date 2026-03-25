@@ -102,7 +102,7 @@ class TalentAgent:
     leadership signals, tech stack signals.
     """
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     async def analyze(self, state: DueDiligenceState) -> Dict[str, Any]:
         company_id = state["company_id"]

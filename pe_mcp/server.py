@@ -312,13 +312,22 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             try:
                 assessment = await cs3_client.get_assessment(company_id)
             except Exception:
-                # Cache miss or 404 — run full evidence collection + scoring pipeline
+                # Cache miss or 404 — check if pipeline is already running or start it
                 logger.info(
                     "calculate_org_air_score: no cached assessment for %s, "
-                    "triggering on-demand pipeline", company_id
+                    "triggering on-demand pipeline in background", company_id
                 )
-                assessment = await on_demand.get_or_score_company(company_id)
-                freshly_scored = True
+                asyncio.create_task(on_demand.get_or_score_company(company_id))
+                return [TextContent(type="text", text=json.dumps({
+                    "company_id": company_id,
+                    "status": "scoring_started",
+                    "message": (
+                        f"The full scoring pipeline for {company_id} has been started. "
+                        "It collects SEC filings, board governance data, market signals, "
+                        "and runs the Org-AI-R model — this typically takes 2-5 minutes. "
+                        "Please ask for the score again in a few minutes."
+                    ),
+                }, indent=2))]
             # Record history snapshot 
             try:
                 await history_service.record_assessment(
@@ -447,10 +456,17 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             except Exception:
                 logger.info(
                     "run_gap_analysis: no cached assessment for %s, "
-                    "triggering on-demand pipeline", company_id
+                    "triggering on-demand pipeline in background", company_id
                 )
-                assessment = await on_demand.get_or_score_company(company_id)
-                freshly_scored = True
+                asyncio.create_task(on_demand.get_or_score_company(company_id))
+                return [TextContent(type="text", text=json.dumps({
+                    "company_id": company_id,
+                    "status": "scoring_started",
+                    "message": (
+                        f"No score found for {company_id}. The scoring pipeline has been started "
+                        "in the background (2-5 minutes). Once complete, call run_gap_analysis again."
+                    ),
+                }, indent=2))]
             current_scores = {
                 d.value: s.score
                 for d, s in assessment.dimension_scores.items()
