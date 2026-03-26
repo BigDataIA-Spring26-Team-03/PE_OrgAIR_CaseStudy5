@@ -2,42 +2,41 @@
   "ticker": "TSLA",
   "company_name": "Tesla",
   "sector": "technology",
-  "assessment_id": null,
-  "scored_at": "2026-03-22T22:19:17.292911+00:00",
-  "final_score": 62.4903536,
-  "vr_score": 54.8265159675,
-  "hr_score": 77.06775,
-  "synergy_score": 53.450775369255,
-  "position_factor": 0.183838,
+  "assessment_id": "eb877aed-9371-478b-8832-1b0cf733472e",
+  "scored_at": "2026-03-25T23:13:45.482993+00:00",
+  "final_score": 63.7170592,
+  "vr_score": 56.5688144,
+  "hr_score": 77.302875,
+  "synergy_score": 55.31759347,
+  "position_factor": 0.2047456,
   "talent_concentration": 0.2359,
   "confidence": {
-    "ci_lower": 59.7464,
-    "ci_upper": 65.2344,
+    "ci_lower": 60.9731,
+    "ci_upper": 66.4611,
     "sem": 1.4,
     "reliability": 0.99,
-    "evidence_count": 387
+    "evidence_count": 386
   },
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 53.08838095238095,
+      "score": 53.08838094,
       "contributing_sources": [
         "Item 1A (Risk)",
         "Item 7 (MD&A)",
         "technology_hiring"
       ],
       "total_weight": 0.5,
-      "confidence": 0.99462684375
+      "confidence": 0.9946268438
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 52.114285714285714,
+      "score": 62.71428571,
       "contributing_sources": [
-        "Item 1A (Risk)",
-        "board_composition"
+        "Item 1A (Risk)"
       ],
-      "total_weight": 1.5,
-      "confidence": 0.9720875
+      "total_weight": 0.8,
+      "confidence": 0.855
     },
     "technology_stack": {
       "dimension": "technology_stack",
@@ -51,24 +50,21 @@
     },
     "talent": {
       "dimension": "talent",
-      "score": 53.22,
+      "score": 53.68,
       "contributing_sources": [
-        "glassdoor_reviews",
         "technology_hiring"
       ],
-      "total_weight": 0.8,
-      "confidence": 0.820975
+      "total_weight": 0.7,
+      "confidence": 0.8075
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 42.87037037037037,
+      "score": 43.16666666,
       "contributing_sources": [
-        "Item 7 (MD&A)",
-        "board_composition",
-        "glassdoor_reviews"
+        "Item 7 (MD&A)"
       ],
-      "total_weight": 0.9,
-      "confidence": 0.9655376875
+      "total_weight": 0.5,
+      "confidence": 0.8075
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
@@ -83,11 +79,9 @@
     "culture": {
       "dimension": "culture",
       "score": 50.0,
-      "contributing_sources": [
-        "glassdoor_reviews"
-      ],
-      "total_weight": 0.8,
-      "confidence": 0.07
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     }
   },
   "scoring_parameters": {

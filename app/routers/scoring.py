@@ -140,6 +140,38 @@ async def score_company(
 
 
 # ============================================================================
+# TRIGGER SCORING (MCP fire-and-forget endpoint)
+# ============================================================================
+
+@router.post("/trigger/{ticker}")
+async def trigger_scoring(
+    ticker: str,
+    background_tasks: BackgroundTasks,
+    sector: str = Query("Unknown", description="Sector hint; service auto-detects via yfinance"),
+):
+    """
+    Fire-and-forget scoring trigger designed for MCP server use.
+    Runs full pipeline in FastAPI BackgroundTasks (separate OS process from MCP).
+    Returns immediately with task_id — MCP server stays connected.
+    """
+    import uuid
+    task_id = str(uuid.uuid4())
+    scoring_status[task_id] = {
+        "status": "queued",
+        "ticker": ticker.upper(),
+        "queued_at": datetime.now().isoformat(),
+    }
+    background_tasks.add_task(run_scoring_task, ticker.upper(), sector, task_id)
+    logger.info("scoring_triggered", ticker=ticker, task_id=task_id)
+    return {
+        "task_id": task_id,
+        "status": "queued",
+        "ticker": ticker.upper(),
+        "message": f"Full pipeline started for {ticker}. Check GET /api/v1/scoring/status/{task_id}",
+    }
+
+
+# ============================================================================
 # CHECK SCORING STATUS
 # ============================================================================
 

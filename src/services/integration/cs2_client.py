@@ -228,7 +228,7 @@ class CS2Client:
         - /api/v1/board-governance/ticker/{ticker} → board governance (board.py)
         - /api/v1/culture-signals/reviews/ticker/{ticker} → Glassdoor reviews (culture.py)
         """
-        ext_task  = self._fetch_external_evidence(company_id, min_confidence, indexed, since, limit)
+        ext_task  = self._fetch_external_evidence(company_id, min_confidence, indexed, since, limit, signal_categories)
         sec_task  = self._fetch_sec_evidence(company_id, limit)
         board_task = self._fetch_board_evidence(company_id)
         gd_task   = self._fetch_glassdoor_evidence(company_id, limit)
@@ -264,9 +264,15 @@ class CS2Client:
         indexed: Optional[bool],
         since: Optional[datetime],
         limit: int,
+        signal_categories: Optional[List["SignalCategory"]] = None,
     ) -> List[CS2Evidence]:
         """Fetch 4 external signal types from /api/v1/evidence."""
-        params: Dict[str, Any] = {"company_id": company_id, "limit": limit}
+        # When filtering by signal_categories, fetch more rows so server-side
+        # filtering doesn't starve the client-side filter of matching rows.
+        fetch_limit = min(limit * 20, 500) if signal_categories else limit
+        params: Dict[str, Any] = {"company_id": company_id, "limit": fetch_limit}
+        if signal_categories:
+            params["signal_categories"] = ",".join(sc.value for sc in signal_categories)
         if min_confidence > 0.0:
             params["min_confidence"] = min_confidence
         if indexed is not None:

@@ -1,8 +1,8 @@
 {
   "ticker": "JNJ",
   "company_id": "235f025e-8dc6-43bf-8286-a50a12c06eb2",
-  "signal_id": "da925435-effe-4e11-a641-294828cc9c89",
-  "collected_at": "2026-03-22T18:19:04.404974",
+  "signal_id": "6df51cde-e9da-4956-91b6-809f76474b19",
+  "collected_at": "2026-03-25T19:26:47.096008",
   "summary": {
     "culture_score": 50.0,
     "innovation_score": 50.0,

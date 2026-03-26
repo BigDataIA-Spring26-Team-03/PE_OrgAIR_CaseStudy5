@@ -1,21 +1,21 @@
 {
   "ticker": "NVDA",
   "company_name": "NVIDIA",
-  "sector": "technology",
-  "assessment_id": "8f7d7ce1-3c36-402d-b41d-20055e54ea86",
-  "scored_at": "2026-03-24T17:33:49.522156+00:00",
-  "final_score": 69.6294384,
-  "vr_score": 64.26884591,
-  "hr_score": 79.401,
-  "synergy_score": 64.55303841,
-  "position_factor": 0.3912256,
+  "sector": "Unknown",
+  "assessment_id": "f4e8be66-c386-43dd-a1b1-1912fa562651",
+  "scored_at": "2026-03-26T14:18:12.472814+00:00",
+  "final_score": 65.7210768,
+  "vr_score": 62.46358196,
+  "hr_score": 76.683,
+  "synergy_score": 47.89896239,
+  "position_factor": 0.1495632,
   "talent_concentration": 0.2521,
   "confidence": {
-    "ci_lower": 66.8854,
-    "ci_upper": 72.3734,
+    "ci_lower": 62.9771,
+    "ci_upper": 68.4651,
     "sem": 1.4,
     "reliability": 0.99,
-    "evidence_count": 764
+    "evidence_count": 804
   },
   "dimension_scores": {
     "data_infrastructure": {
@@ -33,7 +33,7 @@
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 66.08714286,
+      "score": 65.68571429,
       "contributing_sources": [
         "Item 1A (Risk)",
         "board_composition",
@@ -44,7 +44,7 @@
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 80.27428571,
+      "score": 76.46476193,
       "contributing_sources": [
         "Item 1 (Business)",
         "digital_presence",
@@ -66,7 +66,7 @@
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 48.69755555,
+      "score": 47.57355555,
       "contributing_sources": [
         "Item 7 (MD&A)",
         "board_composition",
@@ -78,7 +78,7 @@
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 77.19230769,
+      "score": 67.61965812,
       "contributing_sources": [
         "Item 1 (Business)",
         "Item 7 (MD&A)",
@@ -89,7 +89,7 @@
     },
     "culture": {
       "dimension": "culture",
-      "score": 59.01842105,
+      "score": 58.57473684,
       "contributing_sources": [
         "glassdoor_reviews",
         "leadership_signals"

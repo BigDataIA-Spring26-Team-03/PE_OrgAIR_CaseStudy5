@@ -2,18 +2,18 @@
   "ticker": "DPA",
   "company_name": "Decimal Point Analytics",
   "sector": "technology",
-  "assessment_id": null,
-  "scored_at": "2026-03-22T22:18:21.450237+00:00",
+  "assessment_id": "a30ef862-e205-4f96-b394-8c0a7ac48c66",
+  "scored_at": "2026-03-25T23:07:11.268358+00:00",
   "final_score": 55.2775168,
   "vr_score": 46.625,
   "hr_score": 72.519375,
-  "synergy_score": 42.77239536625,
+  "synergy_score": 42.77239537,
   "position_factor": -0.2205,
   "talent_concentration": 0.7,
   "confidence": {
-    "ci_lower": 32.64989632661028,
-    "ci_upper": 77.90510367338972,
-    "sem": 11.54469575172945,
+    "ci_lower": 32.64989633,
+    "ci_upper": 77.90510367,
+    "sem": 11.54469575,
     "reliability": 0.32,
     "evidence_count": 1
   },
@@ -42,20 +42,16 @@
     "talent": {
       "dimension": "talent",
       "score": 50.0,
-      "contributing_sources": [
-        "glassdoor_reviews"
-      ],
-      "total_weight": 0.1,
-      "confidence": 0.07
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     },
     "leadership": {
       "dimension": "leadership",
       "score": 50.0,
-      "contributing_sources": [
-        "glassdoor_reviews"
-      ],
-      "total_weight": 0.1,
-      "confidence": 0.07
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
@@ -67,11 +63,9 @@
     "culture": {
       "dimension": "culture",
       "score": 50.0,
-      "contributing_sources": [
-        "glassdoor_reviews"
-      ],
-      "total_weight": 0.8,
-      "confidence": 0.07
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     }
   },
   "scoring_parameters": {

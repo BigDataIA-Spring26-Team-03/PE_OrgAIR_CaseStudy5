@@ -1,149 +1,198 @@
+"""
+Unified Portfolio Data Service — Integrates CS1, CS2, CS3, CS4.
+
+This is the ONLY way to get data for agents and dashboards.
+ALL data comes from YOUR CS1-CS4 implementations.
+
+Portfolio composition comes from CS1 via fund_id.
+Scores come from CS3 (fast path) or full pipeline (slow path).
+Evidence counts come from CS2.
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-import requests
-
-from src.scoring.integration_service import ScoringIntegrationService
 from src.services.integration.cs1_client import CS1Client
+from src.services.integration.cs2_client import CS2Client
 from src.services.integration.cs3_client import CS3Client
 from src.services.tracking.assessment_history import (
     create_history_service,
 )
+from src.scoring.integration_service import ScoringIntegrationService
 
 logger = logging.getLogger(__name__)
 
-# API base for fetching company list 
-_API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
-
-# Cosmetic sector hints used only when score_company() requires a sector argument
-# and the API response doesn't include one. This does NOT restrict which companies
-# No ticker is rejected or blocked by this dict.
 _SECTOR_HINTS: Dict[str, str] = {
-    "NVDA": "technology", "JPM": "financial_services", "WMT": "retail",
-    "GE": "manufacturing", "DG": "retail", "MSFT": "technology", "AAPL": "technology",
+    "NVDA": "technology",
+    "JPM":  "financial_services",
+    "WMT":  "retail",
+    "GE":   "manufacturing",
+    "DG":   "retail",
+    "MSFT": "technology",
+    "AAPL": "technology",
 }
 
 
 @dataclass(frozen=True)
 class PortfolioCompanyView:
-    company_id: str
-    ticker: str
-    name: str
-    sector: str
-    org_air: float
-    vr_score: float
-    hr_score: float
-    synergy_score: float
-    dimension_scores: Dict[str, float]
+    """Complete view of a portfolio company from CS1-CS4."""
+    company_id:          str
+    ticker:              str
+    name:                str
+    sector:              str
+    org_air:             float
+    vr_score:            float
+    hr_score:            float
+    synergy_score:       float
+    dimension_scores:    Dict[str, float]
     confidence_interval: tuple
-    entry_org_air: float
-    delta_since_entry: float
-    evidence_count: int
+    entry_org_air:       float
+    delta_since_entry:   float
+    evidence_count:      int
 
 
 class PortfolioDataService:
-    async def _get_tickers(self, fund_id: str) -> List[str]:
+    """
+    Unified data service integrating CS1-CS4.
+    Matches the professor's reference implementation.
+    """
+
+    async def get_portfolio_view(
+        self,
+        fund_id: str,
+    ) -> List[PortfolioCompanyView]:
         """
-        Resolve portfolio tickers dynamically.
-        1. Try GET /api/v1/companies (limit=200) — use all tickers from Snowflake.
-        2. Fallback: PORTFOLIO_TICKERS env var (comma-separated, e.g. NVDA,JPM,WMT).
-        3. Last resort: empty list.
+        Load portfolio from CS1, scores from CS3, evidence from CS2.
+
+        Exactly matches professor's reference spec:
+          1. cs1.get_portfolio_companies(fund_id)
+          2. cs3.get_assessment(company.ticker)
+          3. cs2.get_evidence(company.ticker)
+          4. Build PortfolioCompanyView
         """
-        _ = fund_id  # reserved for fund-specific composition
-        try:
-            resp = requests.get(
-                f"{_API_BASE}/api/v1/companies",
-                params={"limit": 500, "offset": 0},
-                timeout=30,
+        # Step 1 — Get portfolio companies from CS1
+        async with CS1Client() as cs1:
+            companies = await cs1.get_portfolio_companies(fund_id)
+
+        if not companies:
+            logger.warning(
+                "get_portfolio_view: no companies found for fund_id=%s",
+                fund_id,
             )
-            resp.raise_for_status()
-            data = resp.json()
-            companies = data if isinstance(data, list) else data.get("items", data.get("results", []))
-            tickers = [
-                str(c.get("ticker", "")).strip().upper()
-                for c in (companies or [])
-                if c.get("ticker")
-            ]
-            if tickers:
-                logger.info("portfolio_tickers_from_api count=%d tickers=%s", len(tickers), tickers[:10])
-                return tickers
-        except Exception as exc:
-            logger.warning("portfolio_tickers_api_failed: %s", exc)
-
-        fallback = os.getenv("PORTFOLIO_TICKERS", "").strip()
-        if fallback:
-            tickers = [t.strip().upper() for t in fallback.split(",") if t.strip()]
-            if tickers:
-                logger.info("portfolio_tickers_from_env count=%d", len(tickers))
-                return tickers
-
-        logger.error(
-            "portfolio_tickers_empty: CS1 API returned no companies "
-            "and PORTFOLIO_TICKERS env var is not set. "
-            "Returning empty list — add companies via the CS1 API "
-            "or set the PORTFOLIO_TICKERS environment variable."
-        )
-        return []
-
-    async def get_portfolio_view(self, fund_id: str) -> List[PortfolioCompanyView]:
-        """
-        Build a portfolio-level view for CS5.
-        Tickers are resolved dynamically from the companies API or PORTFOLIO_TICKERS env.
-        """
-        tickers = await self._get_tickers(fund_id)
-        if not tickers:
             return []
 
-        tasks = [self._score_one_ticker(t) for t in tickers]
+        logger.info(
+            "get_portfolio_view: scoring %d companies for fund=%s",
+            len(companies), fund_id,
+        )
+
+        # Step 2 — Score all companies in parallel
+        tasks = [self._build_company_view(company) for company in companies]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         successful: List[PortfolioCompanyView] = []
-        for ticker, view in zip(tickers, results):
-            if isinstance(view, BaseException):
-                logger.warning("portfolio_score_exception", extra={"ticker": ticker, "error": str(view)})
+        for company, result in zip(companies, results):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "portfolio_view_failed: ticker=%s error=%s",
+                    company.ticker, result,
+                )
                 continue
-            if view is None:
-                logger.warning("portfolio_score_failed", extra={"ticker": ticker})
-                continue
-            successful.append(view)
+            if result is not None:
+                successful.append(result)
+
         return successful
 
-    async def _score_one_ticker(self, ticker: str) -> Optional[PortfolioCompanyView]:
+    async def _build_company_view(
+        self,
+        company,
+    ) -> Optional[PortfolioCompanyView]:
+        """
+        Build one PortfolioCompanyView for a company.
+        Uses CS3 fast path, falls back to full pipeline.
+        """
+        ticker = company.ticker
+
         try:
-            service = ScoringIntegrationService()
+            # Step 2a — Get score from CS3 (fast path)
+            assessment = None
+            try:
+                async with CS3Client() as cs3:
+                    assessment = await cs3.get_assessment(ticker)
+                logger.info(
+                    "portfolio_cs3_hit: ticker=%s org_air=%.1f",
+                    ticker, assessment.org_air_score,
+                )
+            except Exception as cs3_exc:
+                logger.info(
+                    "portfolio_cs3_miss: ticker=%s — running full pipeline. error=%s",
+                    ticker, cs3_exc,
+                )
 
-            def _run() -> dict:
-                try:
-                    return service.score_company(ticker)
-                except TypeError:
-                    sector = _SECTOR_HINTS.get(ticker.upper(), "technology")
-                    return service.score_company(ticker, sector)
+            # Step 2b — Full pipeline if CS3 missed
+            if assessment is None:
+                service = ScoringIntegrationService()
 
-            result = await asyncio.to_thread(_run)
+                def _run() -> dict:
+                    try:
+                        return service.score_company(ticker)
+                    except TypeError:
+                        sector = _SECTOR_HINTS.get(ticker.upper(), "technology")
+                        return service.score_company(ticker, sector)
 
-            org_air = float(result["final_score"])
-            ci = (
-                float(result["confidence"]["ci_lower"]),
-                float(result["confidence"]["ci_upper"]),
-            )
+                raw = await asyncio.to_thread(_run)
 
-            raw_dims = result.get("dimension_scores", {}) or {}
-            dimension_scores: Dict[str, float] = {}
-            for dim, payload in raw_dims.items():
-                if isinstance(payload, dict) and "score" in payload:
-                    dimension_scores[str(dim)] = float(payload["score"])
-                elif isinstance(payload, (int, float)):
-                    dimension_scores[str(dim)] = float(payload)
+                class _FakeAssessment:
+                    org_air_score       = float(raw["final_score"])
+                    vr_score            = float(raw["vr_score"])
+                    hr_score            = float(raw["hr_score"])
+                    synergy_score       = float(raw["synergy_score"])
+                    confidence_interval = (
+                        float(raw["confidence"]["ci_lower"]),
+                        float(raw["confidence"]["ci_upper"]),
+                    )
+                    evidence_count      = int(raw.get("evidence_count") or 0)
+                    dimension_scores    = {}
 
-            # Fetch entry_org_air from assessment history (oldest snapshot).
-            # Fall back to current org_air (delta=0) when no history or on error.
-            entry_org_air = org_air
-            company_name = ticker
+                for dim, payload in (raw.get("dimension_scores", {}) or {}).items():
+                    score = (
+                        float(payload["score"])
+                        if isinstance(payload, dict)
+                        else float(payload)
+                    )
+
+                    class _DS:
+                        pass
+                    ds = _DS()
+                    ds.score = score
+
+                    class _D:
+                        pass
+                    d = _D()
+                    d.value = str(dim)
+                    _FakeAssessment.dimension_scores[d] = ds
+
+                assessment = _FakeAssessment()
+
+            # Step 2c — Get evidence count from CS2
+            evidence_count = 0
+            try:
+                async with CS2Client() as cs2:
+                    evidence = await cs2.get_evidence(ticker)
+                    evidence_count = len(evidence)
+            except Exception as cs2_exc:
+                logger.warning(
+                    "portfolio_cs2_failed: ticker=%s error=%s",
+                    ticker, cs2_exc,
+                )
+
+            # Step 2d — Get entry score from history + real company name
+            entry_org_air = assessment.org_air_score
+            company_name  = company.name or ticker
+
             try:
                 async with CS1Client() as cs1:
                     async with CS3Client() as cs3:
@@ -155,40 +204,46 @@ class PortfolioDataService:
                             assessor_id="portfolio-data-service",
                             assessment_type="full",
                         )
-                        company = await cs1.get_company(ticker)
-                        if company and company.name:
-                            company_name = company.name
-            except Exception as exc:
+            except Exception as hist_exc:
                 logger.warning(
-                    "portfolio_history_or_name_failed: ticker=%s error=%s — "
-                    "using current score as entry, ticker as name",
-                    ticker, exc,
+                    "portfolio_history_failed: ticker=%s error=%s",
+                    ticker, hist_exc,
                 )
 
+            # Step 3 — Build dimension scores dict
+            dimension_scores: Dict[str, float] = {}
+            for d, s in assessment.dimension_scores.items():
+                key = d.value if hasattr(d, "value") else str(d)
+                dimension_scores[key] = float(s.score)
+
+            # Step 4 — Build and return PortfolioCompanyView
             return PortfolioCompanyView(
-                company_id=str(
-                    result.get("company_id") or result.get("ticker") or ticker
-                ),
-                ticker=str(result.get("ticker") or ticker),
+                company_id=str(getattr(company, "company_id", ticker)),
+                ticker=ticker,
                 name=company_name,
-                sector=str(result.get("sector") or ""),
-                org_air=org_air,
-                vr_score=float(result["vr_score"]),
-                hr_score=float(result["hr_score"]),
-                synergy_score=float(result["synergy_score"]),
+                sector=str(
+                    company.sector.value
+                    if hasattr(company.sector, "value")
+                    else company.sector or ""
+                ),
+                org_air=assessment.org_air_score,
+                vr_score=assessment.vr_score,
+                hr_score=assessment.hr_score,
+                synergy_score=assessment.synergy_score,
                 dimension_scores=dimension_scores,
-                confidence_interval=ci,
+                confidence_interval=assessment.confidence_interval,
                 entry_org_air=entry_org_air,
-                delta_since_entry=org_air - entry_org_air,
-                evidence_count=int(result.get("evidence_count") or 0),
+                delta_since_entry=(assessment.org_air_score - entry_org_air),
+                evidence_count=evidence_count,
             )
+
         except Exception as exc:
             logger.warning(
-                "score_one_ticker_exception",
-                extra={"ticker": ticker, "error": str(exc)},
+                "build_company_view_failed: ticker=%s error=%s",
+                ticker, exc,
             )
             return None
 
 
+# Singleton instance
 portfolio_data_service = PortfolioDataService()
-

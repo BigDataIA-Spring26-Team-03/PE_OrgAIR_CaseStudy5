@@ -8,11 +8,24 @@ GPT-4, or any MCP-compatible client can call your platform.
 Entry point: python -m pe_mcp.server
 """
 from __future__ import annotations
+import os
+
+# Suppress all stdout-polluting libraries BEFORE any imports.
+# MCP stdio transport uses raw stdout (fd 1) for JSON-RPC — any stray
+# write (tqdm progress bars, HF hub warnings, yfinance prints) corrupts
+# the protocol and causes "Server disconnected" in Claude Desktop.
+os.environ.setdefault("TQDM_DISABLE", "1")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
+
 from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 import asyncio
+import httpx
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -317,15 +330,17 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     "calculate_org_air_score: no cached assessment for %s, "
                     "triggering on-demand pipeline in background", company_id
                 )
-                asyncio.create_task(on_demand.get_or_score_company(company_id))
+                async with httpx.AsyncClient() as _hx:
+                    await _hx.post(
+                        f"http://localhost:8000/api/v1/scoring/trigger/{company_id}",
+                        timeout=10.0,
+                    )
                 return [TextContent(type="text", text=json.dumps({
                     "company_id": company_id,
                     "status": "scoring_started",
                     "message": (
-                        f"The full scoring pipeline for {company_id} has been started. "
-                        "It collects SEC filings, board governance data, market signals, "
-                        "and runs the Org-AI-R model — this typically takes 2-5 minutes. "
-                        "Please ask for the score again in a few minutes."
+                        f"No cached score for {company_id}. Full pipeline started in "
+                        "FastAPI background (2-5 min). Ask for the score again once complete."
                     ),
                 }, indent=2))]
             # Record history snapshot 
@@ -361,11 +376,12 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             dim_key = arguments.get("dimension", "all")
             signal_cats = _DIMENSION_TO_SIGNALS.get(dim_key)
 
-            evidence = await cs2_client.get_evidence(
-                company_id=arguments["company_id"],
-                signal_categories=signal_cats,
-                limit=arguments.get("limit", 10),
-            )
+            async with CS2Client() as cs2:
+                evidence = await cs2.get_evidence(
+                    company_id=arguments["company_id"],
+                    signal_categories=signal_cats,
+                    limit=arguments.get("limit", 10),
+                )
             items = [
                 {
                     "source_type":     e.source_type.value if hasattr(e.source_type, "value") else e.source_type,
@@ -381,26 +397,26 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
 
         elif name == "generate_justification":
             company_id = arguments["company_id"].upper().strip()
-            # Ensure CS3 has a cached assessment before CS4 calls cs3 internally
+            # Ensure CS3 has a cached assessment — fire pipeline in background if missing
             try:
                 await cs3_client.get_assessment(company_id)
             except Exception:
                 logger.info(
-                    "generate_justification: pre-warming CS3 cache for %s "
-                    "via on-demand pipeline", company_id
+                    "generate_justification: no cached score for %s — "
+                    "starting pipeline in background", company_id
                 )
-                await on_demand.get_or_score_company(company_id)
+                asyncio.create_task(on_demand.get_or_score_company(company_id))
+                return [TextContent(type="text", text=json.dumps({
+                    "company_id": company_id,
+                    "status": "scoring_started",
+                    "message": (
+                        f"No score found for {company_id}. Scoring pipeline started "
+                        "in background (2-5 min). Ask for justification again once ready."
+                    ),
+                }, indent=2))]
 
-            # Auto-index CS2 evidence so ChromaDB has data for any company.
-            # Safe to call every time — ChromaDB upserts, no duplicates.
-            try:
-                await on_demand.ensure_evidence_indexed(company_id)
-            except Exception as idx_exc:
-                logger.warning(
-                    "evidence_index_failed: company=%s error=%s — "
-                    "justification may have weak evidence",
-                    company_id, idx_exc,
-                )
+            # Index evidence in background — don't block the justification call
+            asyncio.create_task(on_demand.ensure_evidence_indexed(company_id))
 
             justification = await cs4_client.generate_justification(
                 company_id=company_id,
@@ -500,39 +516,24 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
         elif name == "refresh_company_data":
             company_id = arguments["company_id"].upper().strip()
             logger.info("refresh_company_data: force-refresh requested for %s", company_id)
-            assessment = await on_demand.get_or_score_company(company_id, force_refresh=True)
-            # Record history snapshot
-            try:
-                await history_service.record_assessment(
-                    company_id=company_id,
-                    assessor_id="mcp-refresh-company-data",
-                    assessment_type="full",
-                )
-            except Exception as hist_exc:
-                logger.warning(
-                    "history_record_failed: company=%s error=%s",
-                    company_id, hist_exc,
-                )
 
-            result = {
-                "company_id":    company_id,
-                "refreshed_at":  datetime.now(timezone.utc).isoformat(),
-                "org_air":       assessment.org_air_score,
-                "vr_score":      assessment.vr_score,
-                "hr_score":      assessment.hr_score,
-                "synergy_score": assessment.synergy_score,
-                "confidence_interval": list(assessment.confidence_interval),
-                "dimension_scores": {
-                    d.value: s.score
-                    for d, s in assessment.dimension_scores.items()
-                },
-                "status":  "refreshed",
+            async with httpx.AsyncClient() as _hx:
+                _resp = await _hx.post(
+                    f"http://localhost:8000/api/v1/scoring/trigger/{company_id}",
+                    timeout=10.0,
+                )
+            task_id = _resp.json().get("task_id") if _resp.status_code == 200 else None
+            return [TextContent(type="text", text=json.dumps({
+                "company_id": company_id,
+                "status": "refresh_started",
+                "task_id": task_id,
                 "message": (
-                    f"Full 7-source evidence collection and scoring pipeline "
-                    f"completed for {company_id}."
+                    f"Full evidence re-collection and re-scoring pipeline started for {company_id}. "
+                    "This collects SEC filings, job postings, patents, Glassdoor, board data, "
+                    "and re-runs Org-AI-R scoring — typically 2-5 minutes. "
+                    "Ask for the score again once complete."
                 ),
-            }
-            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            }, indent=2))]
 
         elif name == "get_assessment_history":
             company_id = arguments["company_id"].upper().strip()
