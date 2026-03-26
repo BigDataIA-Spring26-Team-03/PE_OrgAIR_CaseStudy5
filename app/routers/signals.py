@@ -8,9 +8,14 @@ Comprehensive AI/ML signal collection with no arbitrary limits.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+import time
 from datetime import datetime
 from typing import Optional
-import json
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
 import structlog
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -19,7 +24,12 @@ from app.models.signal import ExternalSignal, SignalCategory, SignalSource
 from app.services.snowflake import SnowflakeService
 
 # Import all collectors
-from app.pipelines.job_signals import scrape_job_postings, job_postings_to_signals
+from app.pipelines.job_signals import (
+    DEFAULT_JOB_SCRAPER_SOURCES,
+    job_posting_relevance,
+    job_postings_to_signals,
+    scrape_job_postings,
+)
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
 from app.pipelines.patent_signals import collect_patent_signals_real
 from app.pipelines.external_signals_orchestrator import build_company_signal_summary
@@ -30,6 +40,85 @@ from app.pipelines.leadership_signals import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/signals", tags=["signals"])
+
+# Tame JobSpy volume (Indeed+LinkedIn can match hundreds per query after company filter).
+_COMPREHENSIVE_MAX_RESULTS_PER_SOURCE = 22
+_COMPREHENSIVE_CAP_PER_QUERY = 32
+_COMPREHENSIVE_MAX_UNIQUE_JOBS = 120
+
+_JOBS_ONLY_MAX_RESULTS_PER_SOURCE = 28
+_JOBS_ONLY_CAP_PER_QUERY = 45
+_JOBS_ONLY_MAX_UNIQUE = 100
+
+
+def _normalize_job_url(url: str) -> str:
+    """Collapse tracking/query variants so the same posting dedupes once."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    try:
+        p = urlparse(u.lower())
+        q = [
+            (k, v)
+            for k, v in parse_qsl(p.query, keep_blank_values=True)
+            if not str(k).lower().startswith("utm_")
+        ]
+        path = p.path.rstrip("/") if len(p.path) > 1 else p.path
+        return urlunparse((p.scheme, p.netloc, path, p.params, urlencode(q), ""))
+    except Exception:
+        return u.lower()
+
+
+def _build_company_aliases(company_name: str, ticker: str, domain: Optional[str]) -> list[str]:
+    """Build broad but safe aliases for job-company matching."""
+    aliases: list[str] = []
+    t = (ticker or "").strip().upper()
+
+    # Job boards list operating brands (e.g. Google), not holding-company names (Alphabet).
+    # Put hiring brands FIRST so JobSpy quoted queries hit real employer strings.
+    if t in ("GOOGL", "GOOG"):
+        aliases.extend(
+            [
+                "Google",
+                "Google LLC",
+                "Alphabet",
+                "Alphabet Inc.",
+            ]
+        )
+
+    if company_name:
+        aliases.append(company_name.strip())
+        cleaned = re.sub(
+            r"\b(inc|inc\.|incorporated|corp|corporation|llc|ltd|limited|plc|co|company)\b\.?",
+            "",
+            company_name,
+            flags=re.IGNORECASE,
+        ).strip(" ,")
+        if cleaned and cleaned.lower() != company_name.strip().lower():
+            aliases.append(cleaned)
+
+    if t:
+        aliases.append(t)
+
+    # Domain stem often maps to hiring brand names (e.g., google.com -> Google).
+    d = (domain or "").strip().lower()
+    if d:
+        d = re.sub(r"^https?://", "", d)
+        d = d.replace("www.", "")
+        stem = d.split("/")[0].split(".")[0]
+        if stem and len(stem) >= 4:
+            aliases.append(stem)
+            aliases.append(stem.title())
+
+    # De-duplicate while preserving order.
+    deduped: list[str] = []
+    seen = set()
+    for a in aliases:
+        key = a.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(a.strip())
+    return deduped
 
 
 # ============================================================================
@@ -47,7 +136,7 @@ async def collect_all_signals(
     🎯 Collect ALL 4 signal types for a company - COMPREHENSIVE SEARCH
 
     What it does:
-    1. Jobs: Searches 10+ AI/ML job types
+    1. Jobs: Searches multiple AI/ML role types (capped per query / total for storage)
     2. Tech Stack: Scrapes company website for AI technologies
     3. Patents: Calls USPTO API for AI patents
     4. Leadership: Board governance (SEC DEF 14A) + scraped exec/hiring signals
@@ -85,12 +174,12 @@ async def collect_all_signals(
             "message": f"Comprehensive signal collection started for {ticker}",
             "company": company,
             "collection_scope": {
-                "jobs": "10+ AI/ML role types, unlimited results",
+                "jobs": "12 AI/ML role types; top-N relevance per query, max 120 unique postings",
                 "tech_stack": "Full website technology scan",
                 "patents": f"All AI patents ({years} years)",
                 "leadership": "Board governance (SEC DEF 14A) + scraped exec/hiring signals",
             },
-            "note": "Collection running in background. Check /api/v1/signals/summary for results.",
+            "note": "Collection runs in a worker thread; leave the API running until logs show '🎉 Collection complete'. Stopping uvicorn mid-run cancels in-flight HTTP (e.g. USPTO).",
         }
     finally:
         db.close()
@@ -453,7 +542,7 @@ async def run_collection_inline_for_debug(ticker: str):
             raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
 
         company = companies[0]
-        await run_comprehensive_collection_task(
+        await _run_comprehensive_collection_async(
             company_id=company["id"],
             company_name=company["name"],
             ticker=ticker.upper(),
@@ -465,7 +554,7 @@ async def run_collection_inline_for_debug(ticker: str):
         db.close()
 
 
-async def run_comprehensive_collection_task(
+async def _run_comprehensive_collection_async(
     company_id: str,
     company_name: str,
     ticker: str,
@@ -473,11 +562,13 @@ async def run_comprehensive_collection_task(
     job_location: str,
 ):
     """
-    COMPREHENSIVE collection - ALL AI/ML jobs, no limits!
+    Full async implementation; use run_comprehensive_collection_task() from BackgroundTasks.
     """
     db = SnowflakeService()
     try:
         all_signals: list[ExternalSignal] = []
+        domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
+        company_aliases = _build_company_aliases(company_name, ticker, domain)
 
         logger.info("🚀 Starting comprehensive collection", ticker=ticker, company_id=company_id, company_name=company_name)
 
@@ -490,12 +581,10 @@ async def run_comprehensive_collection_task(
                 "machine learning engineer",
                 "data scientist",
                 "AI engineer",
-                "artificial intelligence engineer",
                 "deep learning engineer",
                 "MLOps engineer",
                 "research scientist machine learning",
                 "NLP engineer",
-                "natural language processing",
                 "computer vision engineer",
                 "data engineer machine learning",
                 "AI researcher",
@@ -503,16 +592,26 @@ async def run_comprehensive_collection_task(
                 "AI product manager",
             ]
 
-            logger.info("Starting comprehensive job search", queries=len(comprehensive_searches), ticker=ticker)
+            logger.info(
+                "Starting comprehensive job search",
+                queries=len(comprehensive_searches),
+                ticker=ticker,
+                sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
+            )
 
-            for search_query in comprehensive_searches:
+            for i, search_query in enumerate(comprehensive_searches):
+                if i > 0:
+                    time.sleep(2.0)
                 try:
                     jobs = scrape_job_postings(
                         search_query=search_query,
-                        sources=["indeed", "google"],
+                        sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
                         location=job_location,
-                        max_results_per_source=100,
+                        max_results_per_source=_COMPREHENSIVE_MAX_RESULTS_PER_SOURCE,
                         target_company_name=company_name,
+                        target_company_aliases=company_aliases,
+                        ticker=ticker,
+                        cap_after_match=_COMPREHENSIVE_CAP_PER_QUERY,
                     )
                     all_jobs.extend(jobs)
                     if jobs:
@@ -520,17 +619,24 @@ async def run_comprehensive_collection_task(
                 except Exception as e:
                     logger.warning("Search query failed", query=search_query, error=str(e))
 
-            # Deduplicate by URL
+            # Deduplicate by normalized URL (boards add different tracking params)
             seen_urls = set()
             unique_jobs = []
             for job in all_jobs:
-                job_url = job.url or ""
-                if job_url:
-                    if job_url not in seen_urls:
-                        seen_urls.add(job_url)
+                key = _normalize_job_url(job.url or "")
+                if key:
+                    if key not in seen_urls:
+                        seen_urls.add(key)
                         unique_jobs.append(job)
                 else:
                     unique_jobs.append(job)
+
+            if len(unique_jobs) > _COMPREHENSIVE_MAX_UNIQUE_JOBS:
+                unique_jobs = sorted(
+                    unique_jobs,
+                    key=job_posting_relevance,
+                    reverse=True,
+                )[:_COMPREHENSIVE_MAX_UNIQUE_JOBS]
 
             job_signals = job_postings_to_signals(company_id, unique_jobs)
             all_signals.extend(job_signals)
@@ -543,7 +649,6 @@ async def run_comprehensive_collection_task(
         # 2. TECH STACK (company_domains, fallback map, or yfinance)
         # ========================================
         try:
-            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
             if domain:
                 tech_inputs = scrape_tech_signal_inputs(company=ticker, company_domain_or_url=domain)
                 tech_signals = tech_inputs_to_signals(company_id, tech_inputs)
@@ -589,7 +694,6 @@ async def run_comprehensive_collection_task(
 
         # --- 4b. EXTERNAL: scrape company leadership page + careers page ---
         try:
-            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
             if domain:
                 base_url = f"https://{domain}" if not domain.startswith("http") else domain
                 exec_profiles = scrape_leadership_profiles(company=company_name, base_url=base_url, ticker=ticker)
@@ -650,7 +754,32 @@ async def run_comprehensive_collection_task(
         db.close()
 
 
-async def run_patent_only_task(company_id: str, company_name: str, ticker: str, years: int):
+def run_comprehensive_collection_task(
+    company_id: str,
+    company_name: str,
+    ticker: str,
+    years: int,
+    job_location: str,
+) -> None:
+    """
+    Sync entry for BackgroundTasks (runs in Starlette's thread pool + fresh asyncio loop).
+    Avoids asyncio.CancelledError when the server's main loop shuts down async background work.
+    """
+    try:
+        asyncio.run(
+            _run_comprehensive_collection_async(
+                company_id,
+                company_name,
+                ticker,
+                years,
+                job_location,
+            )
+        )
+    except Exception as e:
+        logger.exception("❌ Collection failed", ticker=ticker, error=str(e))
+
+
+async def _run_patent_only_async(company_id: str, company_name: str, ticker: str, years: int):
     try:
         db = SnowflakeService()
 
@@ -692,9 +821,21 @@ async def run_patent_only_task(company_id: str, company_name: str, ticker: str, 
             pass
 
 
-async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_location: str):
+def run_patent_only_task(company_id: str, company_name: str, ticker: str, years: int) -> None:
+    try:
+        asyncio.run(_run_patent_only_async(company_id, company_name, ticker, years))
+    except Exception as e:
+        logger.exception("Patent task failed", ticker=ticker, error=str(e))
+
+
+def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_location: str):
     try:
         db = SnowflakeService()
+        company_aliases = _build_company_aliases(
+            company_name=company_name,
+            ticker=ticker,
+            domain=db.get_domain_for_company(company_id=company_id, ticker=ticker),
+        )
         all_jobs = []
 
         searches = [
@@ -706,14 +847,19 @@ async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, jo
             "NLP engineer",
         ]
 
-        for query in searches:
+        for i, query in enumerate(searches):
+            if i > 0:
+                time.sleep(2.0)
             try:
                 jobs = scrape_job_postings(
                     search_query=query,
-                    sources=["indeed", "google"],
+                    sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
                     location=job_location,
-                    max_results_per_source=100,
+                    max_results_per_source=_JOBS_ONLY_MAX_RESULTS_PER_SOURCE,
                     target_company_name=company_name,
+                    target_company_aliases=company_aliases,
+                    ticker=ticker,
+                    cap_after_match=_JOBS_ONLY_CAP_PER_QUERY,
                 )
                 all_jobs.extend(jobs)
             except Exception as e:
@@ -722,11 +868,16 @@ async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, jo
         seen = set()
         unique = []
         for job in all_jobs:
-            if job.url and job.url not in seen:
-                seen.add(job.url)
+            key = _normalize_job_url(job.url or "")
+            if key:
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(job)
+            else:
                 unique.append(job)
-            elif not job.url:
-                unique.append(job)
+
+        if len(unique) > _JOBS_ONLY_MAX_UNIQUE:
+            unique = sorted(unique, key=job_posting_relevance, reverse=True)[:_JOBS_ONLY_MAX_UNIQUE]
 
         inserted_count = 0
         if unique:
@@ -776,15 +927,15 @@ async def run_batch_collection_task(years: int):
             db = SnowflakeService()
             try:
                 if company_id and company_name:
-                    await run_comprehensive_collection_task(
-                        company_id=company_id,
-                        company_name=company_name,
-                        ticker=ticker,
-                        years=years,
-                        job_location="United States",
+                    await asyncio.to_thread(
+                        run_comprehensive_collection_task,
+                        company_id,
+                        company_name,
+                        ticker,
+                        years,
+                        "United States",
                     )
 
-                    import asyncio
                     await asyncio.sleep(30)
 
             finally:

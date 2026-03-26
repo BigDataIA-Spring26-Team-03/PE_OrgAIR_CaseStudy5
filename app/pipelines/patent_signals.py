@@ -69,6 +69,9 @@ def _resolve_assignee_name(ticker: str, company_name: str) -> str:
             resolved = name or t
     else:
         resolved = name or "Unknown"
+    # Patents are often assigned to operating subs (e.g. Google LLC), not holding company name.
+    if t in ("GOOGL", "GOOG"):
+        return "Google"
     search = _search_term_for_assignee(resolved)
     return search if len(search) >= 2 else (resolved or "Unknown")
 

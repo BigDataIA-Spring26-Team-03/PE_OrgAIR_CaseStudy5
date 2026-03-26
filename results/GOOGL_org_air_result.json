@@ -1,0 +1,97 @@
+{
+  "ticker": "GOOGL",
+  "company_name": "Alphabet Inc.",
+  "sector": "technology",
+  "assessment_id": "94489c0c-30a3-4eb4-bd78-435c6f40ef8a",
+  "scored_at": "2026-03-25T22:58:45.778815+00:00",
+  "final_score": 58.6839456,
+  "vr_score": 49.08719488,
+  "hr_score": 76.8225,
+  "synergy_score": 47.70316799,
+  "position_factor": 0.1620064,
+  "talent_concentration": 0.7,
+  "confidence": {
+    "ci_lower": 48.3986256,
+    "ci_upper": 68.9691744,
+    "sem": 5.247588979,
+    "reliability": 0.8595041322,
+    "evidence_count": 13
+  },
+  "dimension_scores": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 39.7475,
+      "contributing_sources": [
+        "digital_presence",
+        "innovation_activity"
+      ],
+      "total_weight": 0.8,
+      "confidence": 0.776
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 40.0,
+      "contributing_sources": [
+        "board_composition",
+        "leadership_signals"
+      ],
+      "total_weight": 0.95,
+      "confidence": 0.9153
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 56.14666667,
+      "contributing_sources": [
+        "digital_presence",
+        "innovation_activity"
+      ],
+      "total_weight": 0.9,
+      "confidence": 0.776
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 67.5,
+      "contributing_sources": [
+        "glassdoor_reviews"
+      ],
+      "total_weight": 0.1,
+      "confidence": 0.35
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 42.75,
+      "contributing_sources": [
+        "board_composition",
+        "glassdoor_reviews",
+        "leadership_signals"
+      ],
+      "total_weight": 1.0,
+      "confidence": 0.944945
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 80.0,
+      "contributing_sources": [
+        "innovation_activity"
+      ],
+      "total_weight": 0.3,
+      "confidence": 0.44
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 63.15789474,
+      "contributing_sources": [
+        "glassdoor_reviews",
+        "leadership_signals"
+      ],
+      "total_weight": 0.95,
+      "confidence": 0.714
+    }
+  },
+  "scoring_parameters": {
+    "alpha": 0.6,
+    "beta": 0.12,
+    "lambda": 0.25,
+    "delta": 0.15
+  }
+}

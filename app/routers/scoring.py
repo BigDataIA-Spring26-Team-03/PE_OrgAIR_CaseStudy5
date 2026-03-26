@@ -3,6 +3,7 @@
 CS3 Scoring Endpoints - Org-AI-R Integration Service
 """
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pathlib import Path
 import json
@@ -176,6 +177,10 @@ async def score_company_sync(
     
     WARNING: This can take 2-5 minutes and may timeout!
     Use POST /score/{ticker} (background) instead for better UX.
+
+    Scoring runs in a worker thread so the event loop stays free to serve
+    nested HTTP calls from ScoringIntegrationService → localhost:8000 (avoids
+    deadlock / read-timeout when a single worker blocks on sync score_company).
     """
     
     try:
@@ -185,7 +190,11 @@ async def score_company_sync(
         
         # Run integration service
         service = ScoringIntegrationService(api_base_url="http://localhost:8000")
-        result = service.score_company(ticker=ticker.upper(), sector=sector)
+        result = await asyncio.to_thread(
+            service.score_company,
+            ticker.upper(),
+            sector,
+        )
         
         logger.info("sync_scoring_completed", ticker=ticker, score=result['final_score'])
         

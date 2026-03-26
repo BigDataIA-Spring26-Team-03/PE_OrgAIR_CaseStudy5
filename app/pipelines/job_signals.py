@@ -13,6 +13,10 @@ from jobspy import scrape_jobs
 
 from app.models.signal import CompanySignalSummary, ExternalSignal, SignalCategory, SignalSource
 
+# JobSpy site "google" drives Google Search HTML; it often returns 429/CAPTCHA in automation.
+# Prefer Indeed + LinkedIn for stable scraping.
+DEFAULT_JOB_SCRAPER_SOURCES: tuple[str, ...] = ("indeed", "linkedin")
+
 
 class SkillCategory(str, Enum):
     ML_ENGINEERING     = "ml_engineering"
@@ -143,6 +147,12 @@ def _is_generic_it_title(title: str) -> bool:
     return False
 
 
+def job_posting_relevance(job: JobPosting) -> float:
+    """0..1 score for sorting / capping — same logic as signal scoring."""
+    skills = extract_ai_skills(job.description)
+    return calculate_ai_relevance_score(skills, job.title)
+
+
 def calculate_ai_relevance_score(skills: Set[str], title: str) -> float:
     """
     Score 0..1 for AI relevance of a job posting.
@@ -245,7 +255,8 @@ def job_postings_to_signals(company_id: str, jobs: List[JobPosting]) -> List[Ext
         skills     = extract_ai_skills(job.description)
         seniority  = classify_seniority(job.title)
         relevance  = calculate_ai_relevance_score(skills, job.title)
-        score_0_100 = int(round(relevance * 100))
+        # Floor so DB aggregates (AVG) are non-zero when we kept a real title but description was thin.
+        score_0_100 = max(1, min(100, int(round(relevance * 100))))
 
         meta = {
             "company":      job.company,
@@ -301,39 +312,75 @@ def aggregate_job_signals(company_id: str, job_signals: List[ExternalSignal]) ->
     )
 
 
+def _employer_matches_holding_brand(ticker_upper: str, company_lower: str) -> bool:
+    """Job boards often list operating brands (Google) not legal parents (Alphabet)."""
+    if ticker_upper not in ("GOOGL", "GOOG"):
+        return False
+    needles = (
+        "google",
+        "alphabet",
+        "youtube",
+        "waymo",
+        "deepmind",
+        "google llc",
+        "google, inc",
+        "google inc",
+    )
+    return any(n in company_lower for n in needles)
+
+
 def scrape_job_postings(
     search_query: str,
-    sources: list[str] = ["linkedin", "indeed", "glassdoor"],
+    sources: list[str] | None = None,
     location: str = "United States",
     max_results_per_source: int = 25,
     hours_old: int = 24 * 30,
     target_company_name: Optional[str] = None,
     target_company_aliases: Optional[list[str]] = None,
+    ticker: Optional[str] = None,
+    cap_after_match: Optional[int] = None,
 ) -> list[JobPosting]:
     """
     Scrape job postings using JobSpy and return JobPosting objects.
     Filters results to target company via alias matching.
     """
+    if sources is None:
+        sources = list(DEFAULT_JOB_SCRAPER_SOURCES)
+
     aliases: list[str] = []
+    # Curated aliases first so quoted search + "preferred" brand use hiring names (e.g. Google before Alphabet).
+    if target_company_aliases:
+        aliases.extend([a for a in target_company_aliases if a])
     if target_company_name:
         aliases.append(target_company_name)
         cleaned = _clean_company_display_name(target_company_name)
         if cleaned and cleaned.lower() != target_company_name.lower():
             aliases.append(cleaned)
 
-    if target_company_aliases:
-        aliases.extend([a for a in target_company_aliases if a])
-
-    aliases = [a.strip() for a in aliases if a and a.strip()]
+    seen_keys: set[str] = set()
+    deduped: list[str] = []
+    for a in aliases:
+        a = (a or "").strip()
+        if not a:
+            continue
+        k = a.lower()
+        if k not in seen_keys:
+            seen_keys.add(k)
+            deduped.append(a)
+    aliases = deduped
     alias_raws  = [a.lower() for a in aliases]
     alias_norms = [_norm_company(a) for a in aliases]
+
+    n_sources = max(len(sources), 1)
+    # JobSpy multiplies internally; avoid *4 — it pulls hundreds per board before company filter.
+    results_wanted = min(max_results_per_source * n_sources * 2, 180)
 
     def _scrape(effective_query: str):
         return scrape_jobs(
             site_name=sources,
             search_term=effective_query,
             location=location,
-            results_wanted=max_results_per_source * len(sources) * 4,
+            results_wanted=results_wanted,
             hours_old=hours_old,
             linkedin_fetch_description=True,
         )
@@ -358,10 +405,14 @@ def scrape_job_postings(
     if df is None or df.empty:
         return []
 
+    t_up = (ticker or "").strip().upper()
+
     if aliases and "company" in df.columns:
         def is_match(company_val: object) -> bool:
             c      = str(company_val or "")
             c_lower = c.lower()
+            if t_up and _employer_matches_holding_brand(t_up, c_lower):
+                return True
             c_norm  = _norm_company(c)
             c_sq    = _squish(c)
 
@@ -399,5 +450,8 @@ def scrape_job_postings(
             url=str(row.get("job_url", "")),
             posted_date=str(row.get("date_posted", "")),
         ))
+
+    if cap_after_match is not None and len(jobs) > cap_after_match:
+        jobs = sorted(jobs, key=job_posting_relevance, reverse=True)[:cap_after_match]
 
     return jobs

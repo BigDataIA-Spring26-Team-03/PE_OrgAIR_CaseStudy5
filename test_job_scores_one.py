@@ -23,7 +23,7 @@ def main():
 
     jobs = scrape_job_postings(
         search_query="data engineer",
-        sources=["indeed", "google"],
+        sources=["indeed", "linkedin"],
         location="United States",
         max_results_per_source=25,
         target_company_name=name,

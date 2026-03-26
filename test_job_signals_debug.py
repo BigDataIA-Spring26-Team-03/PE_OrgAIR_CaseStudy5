@@ -40,7 +40,7 @@ def main():
         # ----------------------------
         jobs = scrape_job_postings(
             search_query="data engineer",
-            sources=["indeed", "google"],
+            sources=["indeed", "linkedin"],
             location="United States",
             max_results_per_source=25,
             target_company_name=name,
@@ -59,7 +59,7 @@ def main():
 
             jobs_no_filter = scrape_job_postings(
                 search_query="data engineer",
-                sources=["indeed", "google"],
+                sources=["indeed", "linkedin"],
                 location="United States",
                 max_results_per_source=25,
                 target_company_name=None,
@@ -76,7 +76,7 @@ def main():
 
             jobs_forced = scrape_job_postings(
                 search_query=forced_query,
-                sources=["indeed", "google"],
+                sources=["indeed", "linkedin"],
                 location="United States",
                 max_results_per_source=50,
                 target_company_name=None,

@@ -70,7 +70,8 @@ COMPANY_CONFIGS = [
     },
 ]
 
-SOURCES           = ["indeed", "google"]
+# Avoid JobSpy "google" (Google Search) — 429/CAPTCHA in automation; use Indeed + LinkedIn.
+SOURCES           = ["indeed", "linkedin"]
 LOCATION          = "United States"
 MAX_PER_SOURCE    = 15   # 15 per source × 2 sources = up to 30 postings per company
 HOURS_OLD         = 24 * 30  # last 30 days
@@ -152,6 +153,7 @@ def collect_and_store(config: dict) -> dict:
                 hours_old=HOURS_OLD,
                 target_company_name=name,
                 target_company_aliases=aliases,
+                ticker=ticker,
             )
     except Exception as e:
         print(f"  [ERROR] Scraping failed: {e}")

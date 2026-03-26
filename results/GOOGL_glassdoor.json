@@ -1,0 +1,33 @@
+{
+  "ticker": "GOOGL",
+  "company_id": "e66f4479-1759-527b-ac79-77447a9ef9c9",
+  "signal_id": "b7e30278-11e6-4d2b-8126-aa0ba1f0e624",
+  "collected_at": "2026-03-25T13:41:25.381388",
+  "summary": {
+    "culture_score": 35.0,
+    "innovation_score": 50.0,
+    "data_driven_score": 0.0,
+    "change_readiness_score": 100.0,
+    "ai_awareness_score": 0.0,
+    "review_count": 1,
+    "avg_rating": 5.0,
+    "confidence": 0.5,
+    "current_employee_ratio": 1.0,
+    "rationale": "Strong employee sentiment; moderate innovation; 1 reviews"
+  },
+  "reviews": [
+    {
+      "review_id": "102224042",
+      "rating": 5.0,
+      "title": "Great",
+      "pros": "good package, nothing for right now",
+      "cons": "onsite, not great, but flexible at times",
+      "advice": null,
+      "is_current_employee": true,
+      "job_title": "Employee",
+      "date": "2026-01-13T05:03:21.677000+00:00"
+    }
+  ],
+  "positive_keywords": [],
+  "negative_keywords": []
+}

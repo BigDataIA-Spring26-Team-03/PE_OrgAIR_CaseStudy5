@@ -127,6 +127,23 @@ COMPANY_SCAN_OVERRIDES: Dict[str, List[str]] = {
         "/en-us/research",
         "/azure",
     ],
+    # Alphabet (GOOGL): yfinance returns abc.xyz — use google.com + AI-rich paths
+    "GOOGL": [
+        "",
+        "/technology/",
+        "/about/",
+        "/search/howsearchworks/",
+        "/cloud/",
+        "/careers/",
+    ],
+    "GOOG": [
+        "",
+        "/technology/",
+        "/about/",
+        "/search/howsearchworks/",
+        "/cloud/",
+        "/careers/",
+    ],
 }
 
 

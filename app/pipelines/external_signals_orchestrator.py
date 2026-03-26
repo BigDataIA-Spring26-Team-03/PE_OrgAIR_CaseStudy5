@@ -6,10 +6,11 @@ from typing import List, Optional
 
 from app.models.signal import CompanySignalSummary, ExternalSignal
 from app.pipelines.job_signals import (
+    DEFAULT_JOB_SCRAPER_SOURCES,
     JobPosting,
-    scrape_job_postings,
-    job_postings_to_signals,
     aggregate_job_signals,
+    job_postings_to_signals,
+    scrape_job_postings,
 )
 from app.pipelines.tech_signals import (
     TechSignalInput,
@@ -82,7 +83,7 @@ def run_external_signals_pipeline(
     # -------------------
     # JOB SIGNALS (real scraping)
     # -------------------
-    jobs_sources = jobs_sources or ["indeed", "google"]
+    jobs_sources = jobs_sources or list(DEFAULT_JOB_SCRAPER_SOURCES)
 
     # Build alias list safely (combine explicit aliases + ticker if present)
     combined_aliases: Optional[List[str]] = None
@@ -98,6 +99,7 @@ def run_external_signals_pipeline(
         max_results_per_source=jobs_max_results_per_source,
         target_company_name=jobs_target_company_name,
         target_company_aliases=combined_aliases,
+        ticker=jobs_target_company_ticker,
     )
 
     jobs_signals = job_postings_to_signals(company_id, jobs)

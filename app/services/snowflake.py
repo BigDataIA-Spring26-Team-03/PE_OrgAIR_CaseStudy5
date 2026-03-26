@@ -180,6 +180,59 @@ class SnowflakeService:
             """
             return s.replace("'", "''")
 
+        def _parse_meta(meta_json_str: Any) -> Dict[str, Any]:
+            if meta_json_str is None:
+                return {}
+            if isinstance(meta_json_str, dict):
+                return meta_json_str
+            if isinstance(meta_json_str, str):
+                s = meta_json_str.strip()
+                if not s:
+                    return {}
+                try:
+                    parsed = json.loads(s)
+                    return parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    return {}
+            return {}
+
+        def _should_skip_placeholder(category_name: str, raw_value: str, score: float, meta: Dict[str, Any]) -> bool:
+            cat = (category_name or "").lower()
+            raw = (raw_value or "").lower()
+
+            if cat == "innovation_activity":
+                ai_patents = meta.get("ai_patents")
+                total_patents = meta.get("total_patents")
+                if score <= 0 and (
+                    raw.startswith("0 ai patents")
+                    or (ai_patents == 0 and total_patents == 0)
+                ):
+                    return True
+
+            if cat == "digital_presence":
+                mention_count = meta.get("mention_count")
+                if score <= 0 and (
+                    mention_count == 0
+                    or "scan failed" in raw
+                    or "no pages accessible" in raw
+                ):
+                    return True
+
+            if cat == "technology_hiring":
+                skill_count = meta.get("skill_count")
+                if score <= 0 and skill_count == 0:
+                    # Indeed/Google often omit descriptions; skills extract empty while title is valid.
+                    if (raw_value or "").strip():
+                        return False
+                    return True
+
+            if cat == "leadership_signals":
+                executive_count = meta.get("executive_count")
+                if score <= 0 and executive_count == 0:
+                    return True
+
+            return False
+
         conn = self._new_connection()
         cursor = conn.cursor()
         inserted = 0
@@ -190,6 +243,13 @@ class SnowflakeService:
 
                 category = s.category.value if hasattr(s.category, "value") else str(s.category)
                 source = s.source.value if hasattr(s.source, "value") else str(s.source)
+                category_mapped = map_category(category)
+                raw_value = s.title or ""
+                normalized_score = float(s.score)
+
+                meta_dict = _parse_meta(getattr(s, "metadata_json", None))
+                if _should_skip_placeholder(category_mapped, raw_value, normalized_score, meta_dict):
+                    continue
 
                 meta_json = _ensure_json_string(getattr(s, "metadata_json", None))
                 meta_sql_literal = _sql_escape_string_literal(meta_json)
@@ -200,7 +260,7 @@ class SnowflakeService:
 
                 query = f"""
                     INSERT INTO external_signals
-                        (id, company_id, category, source, signal_date, raw_value, normalized_score, confidence, metadata, ticker)
+                        (id, company_id, category, source, signal_date, raw_value, normalized_score, confidence, metadata, ticker, created_at)
                     SELECT
                         %(id)s,
                         %(company_id)s,
@@ -211,18 +271,19 @@ class SnowflakeService:
                         %(normalized_score)s,
                         %(confidence)s,
                         PARSE_JSON($${meta_dollar}$$),
-                        NULLIF(%(ticker)s, '')
+                        NULLIF(%(ticker)s, ''),
+                        CURRENT_TIMESTAMP()
                 """
 
                 params = {
                     "id": sid,
                     "company_id": str(s.company_id),
                     "ticker": ticker_val,
-                    "category": map_category(category),
+                    "category": category_mapped,
                     "source": source,
                     "signal_date": s.signal_date.date() if hasattr(s.signal_date, "date") else s.signal_date,
-                    "raw_value": s.title or "",
-                    "normalized_score": float(s.score),
+                    "raw_value": raw_value,
+                    "normalized_score": normalized_score,
                     "confidence": 0.8,
                 }
 
@@ -353,18 +414,30 @@ class SnowflakeService:
         """Get domain: company_domains → yfinance (dynamic, no hardcoded map)."""
         domain = self.get_primary_domain_by_company_id(company_id)
         if domain:
-            return self._normalize_domain(domain)
+            domain = self._normalize_domain(domain)
+        else:
+            t = (ticker or "").strip().upper()
+            if not t:
+                return None
+            domain = ""
+            try:
+                import yfinance as yf
+                website = (yf.Ticker(t).info or {}).get("website")
+                if website:
+                    domain = self._normalize_domain(website)
+            except Exception:
+                domain = ""
+        # Investor / holding-company sites (e.g. abc.xyz) often fail tech scrapers and
+        # yield zero digital_presence signals — use public brand domain for CS2 collection.
+        return self._brand_domain_for_signals((ticker or "").strip().upper(), domain) or None
+
+    def _brand_domain_for_signals(self, ticker: str, resolved_domain: str) -> str:
+        """Map tickers whose yfinance website is a sparse holding page to a crawlable brand domain."""
         t = (ticker or "").strip().upper()
-        if not t:
-            return None
-        try:
-            import yfinance as yf
-            website = (yf.Ticker(t).info or {}).get("website")
-            if website:
-                return self._normalize_domain(website)
-        except Exception:
-            pass
-        return None
+        d = (resolved_domain or "").strip().lower()
+        if t in ("GOOGL", "GOOG") and d in ("abc.xyz", "www.abc.xyz", ""):
+            return "google.com"
+        return resolved_domain
 
     def _normalize_domain(self, url_or_domain: str) -> str:
         s = (url_or_domain or "").strip()

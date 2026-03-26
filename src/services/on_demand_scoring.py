@@ -38,6 +38,15 @@ class OnDemandScoringService:
     ) -> "CompanyAssessment":
         ticker = ticker.upper().strip()
 
+        # Force-refresh must bypass CS3 client's in-memory assessment cache.
+        # Otherwise callers can receive stale data even after a full pipeline rerun.
+        if force_refresh:
+            try:
+                from src.services.integration.cs3_client import CS3Client
+                CS3Client.clear_cache()
+            except Exception:
+                logger.debug("cs3_cache_clear_skipped ticker=%s", ticker)
+
         # ── fast path ────────────────────────────────────────────────────
         if not force_refresh:
             assessment = await self._try_fetch_assessment(ticker)
@@ -106,6 +115,14 @@ class OnDemandScoringService:
                     ticker,
                 )
 
+            # Step 3.5: Coverage gate for newly onboarded tickers.
+            # If key evidence families are missing, retry collection once.
+            await self._ensure_minimum_evidence_coverage(
+                ticker=ticker,
+                company_id=company_id,
+                company_name=company_name,
+            )
+
             # Step 4: Index CS2 evidence into ChromaDB for generate_justification
             await self._index_evidence(ticker)
 
@@ -124,6 +141,13 @@ class OnDemandScoringService:
             )
 
             # Step 6: Fetch and return freshly computed assessment
+            # Clear CS3 cache again to guarantee we read the newly persisted result.
+            try:
+                from src.services.integration.cs3_client import CS3Client
+                CS3Client.clear_cache()
+            except Exception:
+                logger.debug("cs3_cache_clear_after_score_skipped ticker=%s", ticker)
+
             assessment = await self._try_fetch_assessment(ticker)
             if assessment is None:
                 raise RuntimeError(
@@ -235,6 +259,72 @@ class OnDemandScoringService:
             else:
                 logger.info("%s_collection_complete ticker=%s", label, ticker)
 
+    async def _ensure_minimum_evidence_coverage(
+        self,
+        ticker: str,
+        company_id: str,
+        company_name: str,
+    ) -> None:
+        """
+        Ensure key evidence families are present for onboarding runs.
+        If sparse coverage is detected, retry the full evidence collection once.
+        """
+        coverage = await asyncio.get_event_loop().run_in_executor(
+            _executor,
+            lambda: _get_evidence_coverage(company_id=company_id, ticker=ticker),
+        )
+
+        required_categories = (
+            "technology_hiring",
+            "digital_presence",
+            "innovation_activity",
+            "leadership_signals",
+        )
+        missing_categories = [
+            c for c in required_categories
+            if int(coverage.get("category_counts", {}).get(c, 0)) <= 0
+        ]
+        sec_chunk_count = int(coverage.get("sec_chunk_count", 0))
+
+        if not missing_categories and sec_chunk_count > 0:
+            logger.info(
+                "evidence_coverage_ok ticker=%s sec_chunks=%s categories=%s",
+                ticker,
+                sec_chunk_count,
+                coverage.get("category_counts", {}),
+            )
+            return
+
+        logger.warning(
+            "evidence_coverage_sparse ticker=%s missing_categories=%s sec_chunks=%s "
+            "retrying_full_collection_once",
+            ticker, missing_categories, sec_chunk_count,
+        )
+
+        # Board is a dependency for one leadership branch.
+        await self._collect_board_for_signals(ticker)
+        try:
+            await asyncio.wait_for(
+                self._collect_all_evidence(ticker, company_id, company_name),
+                timeout=420.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "coverage_retry_timed_out ticker=%s — proceeding with best available evidence",
+                ticker,
+            )
+
+        coverage_after = await asyncio.get_event_loop().run_in_executor(
+            _executor,
+            lambda: _get_evidence_coverage(company_id=company_id, ticker=ticker),
+        )
+        logger.info(
+            "evidence_coverage_after_retry ticker=%s sec_chunks=%s categories=%s",
+            ticker,
+            int(coverage_after.get("sec_chunk_count", 0)),
+            coverage_after.get("category_counts", {}),
+        )
+
     # ── SEC track ────────────────────────────────────────────────────────
 
     async def _run_sec_collection(self, ticker: str) -> None:
@@ -267,12 +357,13 @@ class OnDemandScoringService:
         """
         from app.routers.signals import run_comprehensive_collection_task
 
-        await run_comprehensive_collection_task(
-            company_id=company_id,
-            company_name=company_name,
-            ticker=ticker,
-            years=5,
-            job_location="United States",
+        await asyncio.to_thread(
+            run_comprehensive_collection_task,
+            company_id,
+            company_name,
+            ticker,
+            5,
+            "United States",
         )
 
     # ── ChromaDB indexing ────────────────────────────────────────────────
@@ -385,3 +476,45 @@ def _run_scoring(ticker: str, sector: str) -> None:
         result.get("final_score", 0.0),
         result.get("evidence_count", 0),
     )
+
+
+def _get_evidence_coverage(company_id: str, ticker: str) -> dict:
+    """Return external-signal + SEC chunk coverage counts for a company."""
+    try:
+        from app.services.snowflake import SnowflakeService
+        db = SnowflakeService()
+        try:
+            cat_rows = db.execute_query(
+                """
+                SELECT category, COUNT(*) AS n
+                FROM external_signals
+                WHERE company_id = %(company_id)s
+                GROUP BY category
+                """,
+                {"company_id": company_id},
+            )
+            counts = {str(r.get("category")): int(r.get("n") or 0) for r in (cat_rows or [])}
+
+            sec_rows = db.execute_query(
+                """
+                SELECT COUNT(*) AS n
+                FROM document_chunks_sec c
+                JOIN documents_sec d ON c.document_id = d.id
+                WHERE UPPER(d.ticker) = UPPER(%(ticker)s)
+                  AND c.section IS NOT NULL
+                """,
+                {"ticker": ticker},
+            )
+            sec_count = int((sec_rows or [{}])[0].get("n") or 0)
+            return {
+                "category_counts": counts,
+                "sec_chunk_count": sec_count,
+            }
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.warning("coverage_query_failed ticker=%s error=%s", ticker, exc)
+        return {
+            "category_counts": {},
+            "sec_chunk_count": 0,
+        }

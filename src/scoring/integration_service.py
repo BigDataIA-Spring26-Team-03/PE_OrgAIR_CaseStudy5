@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import uuid
 from dataclasses import asdict
@@ -112,6 +113,26 @@ class ScoringIntegrationService:
     # Phase 1: Data Collection (CS1 + CS2 APIs)
     # ------------------------------------------------------------------ #
 
+    _SEC_SECTION_PATTERNS = [
+        (re.compile(r"\bitem\s*1a\b", re.IGNORECASE), "Item 1A (Risk)"),
+        (re.compile(r"\brisk\s+factors?\b", re.IGNORECASE), "Item 1A (Risk)"),
+        (re.compile(r"\bitem\s*7\b", re.IGNORECASE), "Item 7 (MD&A)"),
+        (re.compile(r"\bmd&a\b", re.IGNORECASE), "Item 7 (MD&A)"),
+        (re.compile(r"\bmanagement['’]?\s+discussion\b", re.IGNORECASE), "Item 7 (MD&A)"),
+        (re.compile(r"\bitem\s*1\b", re.IGNORECASE), "Item 1 (Business)"),
+        (re.compile(r"\bbusiness\b", re.IGNORECASE), "Item 1 (Business)"),
+    ]
+
+    def _canonicalize_sec_section(self, section: str) -> str:
+        """Normalize SEC section name variants into canonical keys used by scoring."""
+        s = (section or "").strip()
+        if s in SEC_SECTION_MAP:
+            return s
+        for pattern, canonical in self._SEC_SECTION_PATTERNS:
+            if pattern.search(s):
+                return canonical
+        return s
+
     def fetch_company(self, ticker: str) -> Dict[str, Any]:
         """
         Fetch company metadata from CS1 API.
@@ -210,6 +231,11 @@ class ScoringIntegrationService:
             resp = requests.get(url, timeout=120)
             resp.raise_for_status()
             data = resp.json()
+            signals = data.get("signals", []) if isinstance(data, dict) else []
+            filtered_signals = self._select_latest_signal_snapshot(signals)
+            if isinstance(data, dict):
+                data["signals"] = filtered_signals
+                data["signal_count"] = len(filtered_signals)
             logger.info(
                 "cs2_evidence_fetched",
                 ticker=ticker,
@@ -219,6 +245,87 @@ class ScoringIntegrationService:
         except requests.RequestException as e:
             logger.warning("cs2_evidence_fetch_failed", ticker=ticker, error=str(e))
             return {"ticker": ticker, "signals": [], "signal_count": 0}
+
+    def _select_latest_signal_snapshot(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Keep only the latest signal-date snapshot per category.
+        This prevents stale historical rows from polluting current scoring.
+        """
+        if not signals:
+            return []
+
+        def _parse_dt(val: Any) -> datetime:
+            s = str(val or "").strip()
+            if not s:
+                return datetime.min
+            s = s.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(s)
+            except Exception:
+                try:
+                    return datetime.strptime(s.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    try:
+                        return datetime.strptime(s, "%Y-%m-%d")
+                    except Exception:
+                        return datetime.min
+
+        # First pass: find max signal_date per category.
+        max_signal_date: Dict[str, datetime] = {}
+        for s in signals:
+            cat = str(s.get("category") or "").strip().lower()
+            if not cat:
+                continue
+            dt = _parse_dt(s.get("signal_date"))
+            if cat not in max_signal_date or dt > max_signal_date[cat]:
+                max_signal_date[cat] = dt
+
+        # Keep only rows from latest signal_date per category.
+        latest_rows: List[Dict[str, Any]] = []
+        for s in signals:
+            cat = str(s.get("category") or "").strip().lower()
+            if not cat or cat not in max_signal_date:
+                continue
+            if _parse_dt(s.get("signal_date")) == max_signal_date[cat]:
+                latest_rows.append(s)
+
+        # Secondary filter by created_at:
+        # within each category, keep only rows near the latest created_at to avoid
+        # carrying over same-day rows from earlier runs.
+        # If created_at is missing for all rows in a category (legacy data),
+        # fall back to keeping all latest signal_date rows for that category.
+        clustered_rows: List[Dict[str, Any]] = []
+        cluster_window_seconds = 45 * 60  # 45 minutes
+        by_category: Dict[str, List[Dict[str, Any]]] = {}
+        for row in latest_rows:
+            by_category.setdefault(str(row.get("category") or "").strip().lower(), []).append(row)
+
+        for cat, rows in by_category.items():
+            created_times = [
+                _parse_dt(r.get("created_at"))
+                for r in rows
+                if _parse_dt(r.get("created_at")) != datetime.min
+            ]
+            if not created_times:
+                clustered_rows.extend(rows)
+                continue
+
+            max_created = max(created_times)
+            for r in rows:
+                created = _parse_dt(r.get("created_at"))
+                if created == datetime.min:
+                    continue
+                if abs((max_created - created).total_seconds()) <= cluster_window_seconds:
+                    clustered_rows.append(r)
+
+        clustered_rows.sort(
+            key=lambda x: (
+                str(x.get("category") or "").lower(),
+                _parse_dt(x.get("created_at")),
+            ),
+            reverse=True,
+        )
+        return clustered_rows
 
     def collect_glassdoor(self, ticker: str) -> Dict[str, Any]:
         logger.info("collect_glassdoor", ticker=ticker)
@@ -411,7 +518,7 @@ class ScoringIntegrationService:
 
                     doc_sections = set()
                     for chunk in items:
-                        section = chunk.get("section", "")
+                        section = self._canonicalize_sec_section(chunk.get("section", ""))
                         content = chunk.get("content", "")
                         if section and content:
                             sec_sections.setdefault(section, []).append(content)
@@ -533,12 +640,79 @@ class ScoringIntegrationService:
                 logger.debug("skipping_unknown_category", category=category)
                 continue
 
-            # Aggregate: average normalized_score, count as evidence_count
+            # Aggregate: average normalized_score, count as evidence_count.
+            # Ignore known no-data placeholder rows (e.g. failed scans, 0-patent
+            # placeholder records) so missing data is not treated as hard negative
+            # evidence that collapses dimensions to 0.
+            filtered_sigs: List[Dict[str, Any]] = []
+            for s in sigs:
+                raw = str(s.get("raw_value") or "").lower()
+                title = str(s.get("title") or "").lower()
+                try:
+                    score_val = float(s.get("normalized_score"))
+                except (TypeError, ValueError):
+                    score_val = None
+
+                meta = s.get("metadata")
+                if meta is None and s.get("metadata_json") is not None:
+                    meta = s.get("metadata_json")
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+
+                ai_patents = meta.get("ai_patents")
+                total_patents = meta.get("total_patents")
+                mention_count = meta.get("mention_count")
+                skill_count = meta.get("skill_count")
+
+                is_empty_patent_placeholder = (
+                    category == "innovation_activity"
+                    and
+                    (score_val is not None and score_val <= 0.0)
+                    and (
+                        raw.startswith("0 ai patents")
+                        or (ai_patents == 0 and total_patents == 0)
+                    )
+                )
+                is_empty_tech_placeholder = (
+                    category == "digital_presence"
+                    and (score_val is not None and score_val <= 0.0)
+                    and (
+                        mention_count == 0
+                        or "scan failed" in title
+                        or "no pages accessible" in raw
+                    )
+                )
+                is_empty_jobs_placeholder = (
+                    category == "technology_hiring"
+                    and (score_val is not None and score_val <= 0.0)
+                    and skill_count == 0
+                )
+                if is_empty_patent_placeholder:
+                    logger.info("skipping_empty_patent_placeholder_signal", category=category)
+                    continue
+                if is_empty_tech_placeholder:
+                    logger.info("skipping_empty_tech_placeholder_signal", category=category)
+                    continue
+                if is_empty_jobs_placeholder:
+                    logger.info("skipping_empty_jobs_placeholder_signal", category=category)
+                    continue
+
+                filtered_sigs.append(s)
+
             scores = [
                 float(s.get("normalized_score", 50))
-                for s in sigs
+                for s in filtered_sigs
                 if s.get("normalized_score") is not None
             ]
+            if not filtered_sigs:
+                logger.info("skipping_category_no_actionable_signals", category=category)
+                continue
+
             avg_score = sum(scores) / len(scores) if scores else 50.0
             avg_score = max(0.0, min(100.0, avg_score))
 
@@ -546,9 +720,9 @@ class ScoringIntegrationService:
                 EvidenceScore(
                     source=source,
                     raw_score=Decimal(str(round(avg_score, 2))),
-                    confidence=Decimal(str(min(0.5 + len(sigs) * 0.05, 0.95))),
-                    evidence_count=len(sigs),
-                    metadata={"signal_count": len(sigs), "category": category},
+                    confidence=Decimal(str(min(0.5 + len(filtered_sigs) * 0.05, 0.95))),
+                    evidence_count=len(filtered_sigs),
+                    metadata={"signal_count": len(filtered_sigs), "category": category},
                 )
             )
 
