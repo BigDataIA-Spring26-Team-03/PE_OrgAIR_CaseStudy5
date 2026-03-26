@@ -1,0 +1,86 @@
+{
+  "ticker": "META",
+  "company_name": "Meta Platforms, Inc.",
+  "sector": "Unknown",
+  "assessment_id": "7b492110-9691-4850-a1e2-ec26baca2219",
+  "scored_at": "2026-03-26T14:50:13.742029+00:00",
+  "final_score": 54.6990312,
+  "vr_score": 46.13544081,
+  "hr_score": 74.478,
+  "synergy_score": 34.36072321,
+  "position_factor": -0.0463752,
+  "talent_concentration": 0.7,
+  "confidence": {
+    "ci_lower": 48.60785385,
+    "ci_upper": 60.79014615,
+    "sem": 3.107727628,
+    "reliability": 0.9507246377,
+    "evidence_count": 41
+  },
+  "dimension_scores": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 50.0,
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 40.0,
+      "contributing_sources": [
+        "board_composition"
+      ],
+      "total_weight": 0.7,
+      "confidence": 0.8075
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 50.0,
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 60.78,
+      "contributing_sources": [
+        "glassdoor_reviews"
+      ],
+      "total_weight": 0.1,
+      "confidence": 0.665
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 45.195,
+      "contributing_sources": [
+        "board_composition",
+        "glassdoor_reviews"
+      ],
+      "total_weight": 0.4,
+      "confidence": 0.9355125
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 50.0,
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 60.78,
+      "contributing_sources": [
+        "glassdoor_reviews"
+      ],
+      "total_weight": 0.8,
+      "confidence": 0.665
+    }
+  },
+  "scoring_parameters": {
+    "alpha": 0.6,
+    "beta": 0.12,
+    "lambda": 0.25,
+    "delta": 0.15
+  }
+}

@@ -2,20 +2,20 @@
   "ticker": "AMZN",
   "company_name": "AMZN",
   "sector": "technology",
-  "assessment_id": null,
-  "scored_at": "2026-03-22T22:19:07.938224+00:00",
-  "final_score": 59.9632384,
-  "vr_score": 50.907698671375,
-  "hr_score": 77.068875,
-  "synergy_score": 49.6310155727045,
-  "position_factor": 0.1838524,
+  "assessment_id": "323fa481-5c81-4210-ba62-e548886eabdd",
+  "scored_at": "2026-03-25T23:13:34.921322+00:00",
+  "final_score": 60.0428472,
+  "vr_score": 51.02143928,
+  "hr_score": 77.0835,
+  "synergy_score": 49.7512873,
+  "position_factor": 0.1852168,
   "talent_concentration": 0.7,
   "confidence": {
-    "ci_lower": 57.2192,
-    "ci_upper": 62.7072,
+    "ci_lower": 57.2988,
+    "ci_upper": 62.7868,
     "sem": 1.4,
     "reliability": 0.99,
-    "evidence_count": 457
+    "evidence_count": 456
   },
   "dimension_scores": {
     "data_infrastructure": {
@@ -31,14 +31,13 @@
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 43.59285714285714,
+      "score": 42.6547619,
       "contributing_sources": [
         "Item 1A (Risk)",
-        "board_composition",
         "leadership_signals"
       ],
-      "total_weight": 1.75,
-      "confidence": 0.993301
+      "total_weight": 1.05,
+      "confidence": 0.9652
     },
     "technology_stack": {
       "dimension": "technology_stack",
@@ -58,14 +57,13 @@
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 56.02142857142857,
+      "score": 59.02727273,
       "contributing_sources": [
         "Item 7 (MD&A)",
-        "board_composition",
         "leadership_signals"
       ],
-      "total_weight": 1.4,
-      "confidence": 0.9911065
+      "total_weight": 1.1,
+      "confidence": 0.9538
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",

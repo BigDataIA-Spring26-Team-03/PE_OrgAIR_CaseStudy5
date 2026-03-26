@@ -2,47 +2,44 @@
   "ticker": "PAYX",
   "company_name": "Paychex Inc.",
   "sector": "technology",
-  "assessment_id": null,
-  "scored_at": "2026-03-22T22:20:28.830442+00:00",
-  "final_score": 50.08514,
-  "vr_score": 40.879783733525,
-  "hr_score": 68.83275,
-  "synergy_score": 35.595469382616,
-  "position_factor": -0.5482424,
+  "assessment_id": "ea3fb656-0af8-4328-8c9c-b54afc3f3c5c",
+  "scored_at": "2026-03-25T23:22:27.066815+00:00",
+  "final_score": 48.1717896,
+  "vr_score": 38.0982296,
+  "hr_score": 68.457,
+  "synergy_score": 32.99231924,
+  "position_factor": -0.5816216,
   "talent_concentration": 0.7,
   "confidence": {
-    "ci_lower": 47.3411,
-    "ci_upper": 52.8291,
+    "ci_lower": 45.4278,
+    "ci_upper": 50.9158,
     "sem": 1.4,
     "reliability": 0.99,
-    "evidence_count": 653
+    "evidence_count": 348
   },
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 42.72222222222222,
+      "score": 37.5,
       "contributing_sources": [
-        "Item 1A (Risk)",
-        "Item 7 (MD&A)",
         "digital_presence",
         "innovation_activity"
       ],
-      "total_weight": 1.2,
-      "confidence": 0.99278461875
+      "total_weight": 0.8,
+      "confidence": 0.7415
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 40.476190476190474,
+      "score": 42.0,
       "contributing_sources": [
-        "Item 1A (Risk)",
         "leadership_signals"
       ],
-      "total_weight": 1.05,
-      "confidence": 0.9188
+      "total_weight": 0.25,
+      "confidence": 0.44
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 33.77777777777778,
+      "score": 33.77777778,
       "contributing_sources": [
         "Item 1 (Business)",
         "digital_presence",
@@ -54,43 +51,37 @@
     "talent": {
       "dimension": "talent",
       "score": 50.0,
-      "contributing_sources": [
-        "glassdoor_reviews"
-      ],
-      "total_weight": 0.1,
-      "confidence": 0.07
+      "contributing_sources": [],
+      "total_weight": 0.0,
+      "confidence": 0.0
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 52.80555555555556,
+      "score": 42.0,
       "contributing_sources": [
-        "Item 7 (MD&A)",
-        "glassdoor_reviews",
         "leadership_signals"
       ],
-      "total_weight": 1.2,
-      "confidence": 0.899746
+      "total_weight": 0.6,
+      "confidence": 0.44
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 52.16239316239316,
+      "score": 47.91111111,
       "contributing_sources": [
         "Item 1 (Business)",
-        "Item 7 (MD&A)",
         "innovation_activity"
       ],
-      "total_weight": 1.3,
-      "confidence": 0.9877185
+      "total_weight": 1.0,
+      "confidence": 0.9362
     },
     "culture": {
       "dimension": "culture",
-      "score": 48.73684210526316,
+      "score": 42.0,
       "contributing_sources": [
-        "glassdoor_reviews",
         "leadership_signals"
       ],
-      "total_weight": 0.95,
-      "confidence": 0.4792
+      "total_weight": 0.15,
+      "confidence": 0.44
     }
   },
   "scoring_parameters": {
