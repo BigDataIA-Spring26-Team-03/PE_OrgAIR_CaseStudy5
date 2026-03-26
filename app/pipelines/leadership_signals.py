@@ -55,7 +55,7 @@ ROLE_WEIGHTS: dict[str, float] = {
 
 _TITLE_INDICATOR_MAP: list[tuple[re.Pattern, AIBackgroundType]] = [
     (re.compile(r"chief\s+ai\s+officer|c\.?a\.?i\.?o", re.I),                             AIBackgroundType.CHIEF_AI_OFFICER),
-    (re.compile(r"chief\s+(data|digital|analytics)\s+officer|c\.?d\.?[ao]", re.I),        AIBackgroundType.AI_COMPANY_VETERAN),
+    (re.compile(r"chief\s+(data|digital|analytics|(data\s+[&]\s+analytics)|(data\s+and\s+analytics))\s+officer|c\.?d\.?[ao]", re.I),        AIBackgroundType.AI_COMPANY_VETERAN),
     (re.compile(r"chief\s+technology\s+officer|c\.?t\.?o", re.I),                         AIBackgroundType.AI_COMPANY_VETERAN),
     (re.compile(r"chief\s+(information|innovation)\s+officer", re.I),                     AIBackgroundType.AI_COMPANY_VETERAN),
     (re.compile(r"(vp|vice\s+president).{0,40}(ai|machine.learning|data.science)", re.I), AIBackgroundType.AI_BOARD_MEMBER),
@@ -286,7 +286,7 @@ def _fetch_page_text(url: str) -> Optional[str]:
     try:
         from scrapling.fetchers import StealthyFetcher
         page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=30000)
-        return page.get_all_text(ignore_tags=("script", "style", "nav", "footer"))
+        return page.get_all_text(ignore_tags=("script", "style"))
     except Exception as e:
         logger.debug("StealthyFetcher failed for %s: %s", url, e)
         return None

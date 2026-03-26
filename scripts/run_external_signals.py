@@ -10,9 +10,9 @@ from app.pipelines.external_signals_orchestrator import run_external_signals_pip
 # Digital Presence (REAL)
 from app.pipelines.tech_signals import tech_inputs_to_signals, scrape_tech_signal_inputs
 
-# Patents + Leadership (still mock for now)
+# Patents (still mock), Leadership (REAL)
 from app.pipelines.patent_signals import patent_inputs_to_signals, scrape_patent_signal_inputs_mock
-from app.pipelines.leadership_signals import scrape_leadership_profiles_mock
+from app.pipelines.leadership_signals import scrape_leadership_profiles, leadership_profiles_to_aggregated_signal
 
 
 def _build_job_aliases(company_name: str, ticker: Optional[str]) -> List[str]:
@@ -20,7 +20,7 @@ def _build_job_aliases(company_name: str, ticker: Optional[str]) -> List[str]:
     if ticker:
         job_aliases.append(ticker)
 
-    # Add common “brand/subsidiary” aliases (minimal, compliance-safe)
+    # Add common "brand/subsidiary" aliases (minimal, compliance-safe)
     SPECIAL_ALIASES = {
         "UNH": ["UnitedHealth", "United Health", "UnitedHealthcare", "UHG", "Optum"],
         "JPM": ["JPMorgan", "JP Morgan", "Chase", "JPMC"],
@@ -54,7 +54,7 @@ def _build_job_aliases(company_name: str, ticker: Optional[str]) -> List[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run External Signals pipeline (Jobs(company-specific) + Digital Presence(real) + Patents(mock) + Leadership(mock))."
+        description="Run External Signals pipeline (Jobs(company-specific) + Digital Presence(real) + Patents(mock) + Leadership(real))."
     )
     parser.add_argument("--company-id", required=True, help="Must be an existing companies.id in Snowflake")
     parser.add_argument("--query", required=True, help="Job search query (e.g., 'machine learning engineer')")
@@ -117,9 +117,14 @@ def main() -> None:
     patent_signals = patent_inputs_to_signals(company_id=args.company_id, items=patent_items)
 
     # -------------------
-    # D) Leadership (MOCK for now)
+    # D) Leadership (REAL: company leadership page + careers page)
     # -------------------
-    leadership_profiles = scrape_leadership_profiles_mock(company=company_name)
+    base_url = f"https://{domain_url}" if not domain_url.startswith("http") else domain_url
+    leadership_profiles = scrape_leadership_profiles(
+        company=company_name,
+        base_url=base_url,
+        ticker=company_ticker or "",
+    )
 
     # -------------------
     # E) Orchestrator runs jobs scraping (real via JobSpy) + aggregates everything
@@ -133,7 +138,7 @@ def main() -> None:
         jobs_max_results_per_source=args.max_per_source,
         jobs_target_company_name=company_name,
         jobs_target_company_ticker=company_ticker,
-        jobs_target_company_aliases=job_aliases,  # ✅ THIS is what you were missing
+        jobs_target_company_aliases=job_aliases,
         tech_items=tech_items,
         patent_items=patent_items,
         leadership_profiles=leadership_profiles,
@@ -164,7 +169,7 @@ def main() -> None:
     print("\n[debug] digital_presence_items(real):", len(tech_items))
     print("[debug] digital_presence_signals(real):", len(tech_signals))
     print("[debug] patent_signals(mock):", len(patent_signals))
-    print("[debug] leadership_profiles(mock):", len(leadership_profiles))
+    print("[debug] leadership_profiles(real):", len(leadership_profiles))
 
 
 if __name__ == "__main__":
