@@ -20,8 +20,8 @@
 |-----------|------|
 | Demo Video | [Demo Video](#) |
 | Interactive Codelab | [CS5 Agentic Portfolio Codelab](https://codelabs-preview.appspot.com/?file_id=1qHfY9Cs6SipX6US_RT8QELEkXO79qfaO5GIZLKRGJLc#0) |
-| Deployed FastAPI Link | http://34.60.223.69:8000/docs |
-| Deployed App Link | http://34.60.223.69:8501 |
+| Deployed FastAPI Link | |
+| Deployed App Link |  |
 
 ---
 
@@ -76,7 +76,7 @@ Key capabilities:
              |                              +---------------+----------------+
              |                              |       MCP Server Layer         |
              |                              |--------------------------------|
-             |                              | mcp/server.py                  |
+             |                              | pe_mcp/server.py               |
              |                              |  Tools:                        |
              |                              |   calculate_org_air_score      |
              |                              |   get_company_evidence         |
@@ -96,7 +96,8 @@ Key capabilities:
 |  agents/state.py          |               |   portfolio_data_service.py    |
 |                           |               | services/tracking/             |
 |  Specialist Agents:       |               |   assessment_history.py        |
-|  - SECAnalysisAgent       |               | services/analytics/            |
+|  - SECAnalysisAgent       |
+|  - TalentAnalysisAgent    |               | services/analytics/            |
 |  - ScoringAgent           |               |   fund_air.py                  |
 |  - EvidenceAgent          |               | services/observability/        |
 |  - ValueCreationAgent     |               |   metrics.py                   |
@@ -105,9 +106,9 @@ Key capabilities:
                                                            v
                                        +-------------------+------------------+
                                        |         CS1-CS4 Integration          |
-                                       |  services/cs1_client.py              |
-                                       |  services/cs2_client.py              |
-                                       |  services/cs3_client.py              |
+                                       |  services/integration/cs1_client.py  |
+                                       |  services/integration/cs2_client.py  |
+                                       |  services/integration/cs3_client.py  |
                                        |  services/cs4_client.py              |
                                        +--------------------------------------+
                                                            |
@@ -167,6 +168,7 @@ Unified integration layer between CS1-CS4 and the MCP server.
 | Agent | Responsibility | CS Integration |
 |---|---|---|
 | SECAnalysisAgent | SEC filing analysis | CS2 evidence |
+| TalentAnalysisAgent | External signal analysis | CS2 evidence |
 | ScoringAgent | Org-AI-R calculation + HITL trigger | CS3 scoring |
 | EvidenceAgent | Dimension justifications | CS4 RAG |
 | ValueCreationAgent | EBITDA projection + gap analysis | CS3+CS4 |
@@ -293,7 +295,7 @@ PE_ORGAIR_CASESTUDY5/
 │       └── observability/
 │           └── metrics.py                  # Prometheus metrics
 │
-├── mcp/
+├── pe_mcp/
 │   └── server.py                           # MCP Server (6 tools, 2 resources, 2 prompts)
 │
 ├── agents/
@@ -394,20 +396,19 @@ poetry run pytest tests/ -v --tb=short
 
 ### Ayush Fulsundar
 - CS1/CS2/CS3/CS4 integration clients
-- LangGraph specialist agents (SEC, Scoring, Evidence)
 - MCP server tool implementation
-- Portfolio dashboard (Streamlit)
+- MCP Resources and prompts
+- Portfolio data service
 
 ### Ishaan Samel
-- LangGraph supervisor with HITL
+- LangGraph specialist agents (SEC, Scoring, Evidence)
 - Agentic due diligence workflow
+- Portfolio dashboard (Streamlit)
 - Fund-AI-R calculator
 - IC Memo Generator + LP Letter Generator (bonus)
 - Prometheus metrics
 
 ### Vaishnavi Srinivas
-- Leadership signals real scraper (Scrapling + Wikipedia REST API)
-- Board governance + scraped exec signals merged pipeline
 - Assessment history tracking
 - Investment Tracker with ROI (bonus)
 - Mem0 semantic memory (bonus)
