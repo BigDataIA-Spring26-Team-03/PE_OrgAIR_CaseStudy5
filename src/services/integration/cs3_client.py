@@ -256,7 +256,10 @@ class CS3Client:
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            raise RuntimeError("CS3Client must be used as async context manager")
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
+            )
         return self._client
 
     async def get_assessment(self, company_id: str) -> CompanyAssessment:

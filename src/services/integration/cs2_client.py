@@ -528,10 +528,10 @@ class CS2Client:
         )
 
     def _get_client(self) -> httpx.AsyncClient:
-        """Return the active async client, raising if not in context manager."""
+        """Return the active async client, creating lazily if needed."""
         if self._client is None:
-            raise RuntimeError(
-                "CS2Client must be used as an async context manager: "
-                "`async with CS2Client() as client:`"
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
             )
         return self._client

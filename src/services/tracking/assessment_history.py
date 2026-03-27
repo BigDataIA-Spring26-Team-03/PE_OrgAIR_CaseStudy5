@@ -320,9 +320,12 @@ class SnowflakeHistoryStore:
 
         snapshots: List[AssessmentSnapshot] = []
         for row in rows:
-            # Snowflake DictCursor returns lowercase keys
+            # Snowflake DictCursor returns UPPERCASE column names — normalize to lowercase
+            row = {k.lower(): v for k, v in row.items()}
             raw_dims = row.get("dimension_scores") or {}
-            # VARIANT columns come back as Python dict already; wrap in Decimal
+            # VARIANT columns may come back as a JSON string — parse if needed
+            if isinstance(raw_dims, str):
+                raw_dims = json.loads(raw_dims) if raw_dims else {}
             dim_scores = {k: Decimal(str(v)) for k, v in raw_dims.items()}
 
             ci_lower = row.get("ci_lower")
@@ -507,12 +510,30 @@ class AssessmentHistoryService:
         history = await self.get_history(company_id, days=365)
 
         if not history:
-            # Bootstrap: no recorded history yet — use live CS3 score as baseline
-            current_assessment = await self.cs3.get_assessment(company_id)
+            # Bootstrap: no recorded history yet — use live CS3 score as baseline.
+            # If CS3 is unreachable return a null trend rather than crashing.
+            try:
+                current_assessment = await self.cs3.get_assessment(company_id)
+                current_score = current_assessment.org_air_score
+            except Exception as exc:
+                logger.warning(
+                    "calculate_trend: CS3 unreachable for %s, returning null trend: %s",
+                    company_id, exc,
+                )
+                return AssessmentTrend(
+                    company_id=company_id,
+                    current_org_air=0.0,
+                    entry_org_air=0.0,
+                    delta_since_entry=0.0,
+                    delta_30d=None,
+                    delta_90d=None,
+                    trend_direction="stable",
+                    snapshot_count=0,
+                )
             return AssessmentTrend(
                 company_id=company_id,
-                current_org_air=current_assessment.org_air_score,
-                entry_org_air=current_assessment.org_air_score,
+                current_org_air=current_score,
+                entry_org_air=current_score,
                 delta_since_entry=0.0,
                 delta_30d=None,
                 delta_90d=None,
