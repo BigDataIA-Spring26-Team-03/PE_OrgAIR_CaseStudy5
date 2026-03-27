@@ -8,14 +8,9 @@ Comprehensive AI/ML signal collection with no arbitrary limits.
 
 from __future__ import annotations
 
-import asyncio
-import json
-import re
-import time
 from datetime import datetime
 from typing import Optional
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-
+import json
 import structlog
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -24,101 +19,26 @@ from app.models.signal import ExternalSignal, SignalCategory, SignalSource
 from app.services.snowflake import SnowflakeService
 
 # Import all collectors
-from app.pipelines.job_signals import (
-    DEFAULT_JOB_SCRAPER_SOURCES,
-    job_posting_relevance,
-    job_postings_to_signals,
-    scrape_job_postings,
-)
+from app.pipelines.job_signals import scrape_job_postings, job_postings_to_signals
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
 from app.pipelines.patent_signals import collect_patent_signals_real
 from app.pipelines.external_signals_orchestrator import build_company_signal_summary
 from app.pipelines.leadership_signals import (
     scrape_leadership_profiles,
     leadership_profiles_to_aggregated_signal,
+    calculate_leadership_score_0_1,
 )
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/signals", tags=["signals"])
 
-# Tame JobSpy volume (Indeed+LinkedIn can match hundreds per query after company filter).
-_COMPREHENSIVE_MAX_RESULTS_PER_SOURCE = 22
-_COMPREHENSIVE_CAP_PER_QUERY = 32
-_COMPREHENSIVE_MAX_UNIQUE_JOBS = 120
-
-_JOBS_ONLY_MAX_RESULTS_PER_SOURCE = 28
-_JOBS_ONLY_CAP_PER_QUERY = 45
-_JOBS_ONLY_MAX_UNIQUE = 100
-
-
-def _normalize_job_url(url: str) -> str:
-    """Collapse tracking/query variants so the same posting dedupes once."""
-    u = (url or "").strip()
-    if not u:
-        return ""
-    try:
-        p = urlparse(u.lower())
-        q = [
-            (k, v)
-            for k, v in parse_qsl(p.query, keep_blank_values=True)
-            if not str(k).lower().startswith("utm_")
-        ]
-        path = p.path.rstrip("/") if len(p.path) > 1 else p.path
-        return urlunparse((p.scheme, p.netloc, path, p.params, urlencode(q), ""))
-    except Exception:
-        return u.lower()
-
-
-def _build_company_aliases(company_name: str, ticker: str, domain: Optional[str]) -> list[str]:
-    """Build broad but safe aliases for job-company matching."""
-    aliases: list[str] = []
-    t = (ticker or "").strip().upper()
-
-    # Job boards list operating brands (e.g. Google), not holding-company names (Alphabet).
-    # Put hiring brands FIRST so JobSpy quoted queries hit real employer strings.
-    if t in ("GOOGL", "GOOG"):
-        aliases.extend(
-            [
-                "Google",
-                "Google LLC",
-                "Alphabet",
-                "Alphabet Inc.",
-            ]
-        )
-
-    if company_name:
-        aliases.append(company_name.strip())
-        cleaned = re.sub(
-            r"\b(inc|inc\.|incorporated|corp|corporation|llc|ltd|limited|plc|co|company)\b\.?",
-            "",
-            company_name,
-            flags=re.IGNORECASE,
-        ).strip(" ,")
-        if cleaned and cleaned.lower() != company_name.strip().lower():
-            aliases.append(cleaned)
-
-    if t:
-        aliases.append(t)
-
-    # Domain stem often maps to hiring brand names (e.g., google.com -> Google).
-    d = (domain or "").strip().lower()
-    if d:
-        d = re.sub(r"^https?://", "", d)
-        d = d.replace("www.", "")
-        stem = d.split("/")[0].split(".")[0]
-        if stem and len(stem) >= 4:
-            aliases.append(stem)
-            aliases.append(stem.title())
-
-    # De-duplicate while preserving order.
-    deduped: list[str] = []
-    seen = set()
-    for a in aliases:
-        key = a.strip().lower()
-        if key and key not in seen:
-            seen.add(key)
-            deduped.append(a.strip())
-    return deduped
+# Minimum existing signal count before the guard kicks in.
+# Tickers with fewer than this many existing leadership signals will always
+# be overwritten by a fresh scrape (e.g. single board-governance rows at 42).
+# Minimum existing signal count before the guard kicks in.
+# Tickers with fewer than this many existing leadership signals will always
+# be overwritten by a fresh scrape (e.g. single board-governance rows at 42).
+_MIN_LEADERSHIP_SIGNALS_TO_PROTECT = 10
 
 
 # ============================================================================
@@ -136,7 +56,7 @@ async def collect_all_signals(
     🎯 Collect ALL 4 signal types for a company - COMPREHENSIVE SEARCH
 
     What it does:
-    1. Jobs: Searches multiple AI/ML role types (capped per query / total for storage)
+    1. Jobs: Searches 10+ AI/ML job types
     2. Tech Stack: Scrapes company website for AI technologies
     3. Patents: Calls USPTO API for AI patents
     4. Leadership: Board governance (SEC DEF 14A) + scraped exec/hiring signals
@@ -174,12 +94,12 @@ async def collect_all_signals(
             "message": f"Comprehensive signal collection started for {ticker}",
             "company": company,
             "collection_scope": {
-                "jobs": "12 AI/ML role types; top-N relevance per query, max 120 unique postings",
+                "jobs": "10+ AI/ML role types, unlimited results",
                 "tech_stack": "Full website technology scan",
                 "patents": f"All AI patents ({years} years)",
                 "leadership": "Board governance (SEC DEF 14A) + scraped exec/hiring signals",
             },
-            "note": "Collection runs in a worker thread; leave the API running until logs show '🎉 Collection complete'. Stopping uvicorn mid-run cancels in-flight HTTP (e.g. USPTO).",
+            "note": "Collection running in background. Check /api/v1/signals/summary for results.",
         }
     finally:
         db.close()
@@ -451,6 +371,23 @@ def _count_total_signals(db: SnowflakeService, company_id: str) -> int:
     return int(rows[0].get("n") or 0)
 
 
+def _get_existing_leadership_stats(db: SnowflakeService, company_id: str) -> tuple[int, float]:
+    """Return (signal_count, avg_score) for existing leadership signals."""
+    rows = db.execute_query(
+        """
+        SELECT COUNT(id) as cnt, AVG(normalized_score) as avg_score
+        FROM external_signals
+        WHERE company_id = %(cid)s AND category = 'leadership_signals'
+        """,
+        {"cid": company_id},
+    )
+    if not rows:
+        return 0, 0.0
+    cnt = int(rows[0].get("CNT") or rows[0].get("cnt") or 0)
+    avg = float(rows[0].get("AVG_SCORE") or rows[0].get("avg_score") or 0.0)
+    return cnt, avg
+
+
 def _leadership_signal_from_latest_board(
     db: SnowflakeService, company_id: str, ticker: str
 ) -> Optional[ExternalSignal]:
@@ -542,7 +479,7 @@ async def run_collection_inline_for_debug(ticker: str):
             raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
 
         company = companies[0]
-        await _run_comprehensive_collection_async(
+        await run_comprehensive_collection_task(
             company_id=company["id"],
             company_name=company["name"],
             ticker=ticker.upper(),
@@ -554,7 +491,7 @@ async def run_collection_inline_for_debug(ticker: str):
         db.close()
 
 
-async def _run_comprehensive_collection_async(
+async def run_comprehensive_collection_task(
     company_id: str,
     company_name: str,
     ticker: str,
@@ -562,13 +499,11 @@ async def _run_comprehensive_collection_async(
     job_location: str,
 ):
     """
-    Full async implementation; use run_comprehensive_collection_task() from BackgroundTasks.
+    COMPREHENSIVE collection - ALL AI/ML jobs, no limits!
     """
     db = SnowflakeService()
     try:
         all_signals: list[ExternalSignal] = []
-        domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
-        company_aliases = _build_company_aliases(company_name, ticker, domain)
 
         logger.info("🚀 Starting comprehensive collection", ticker=ticker, company_id=company_id, company_name=company_name)
 
@@ -581,10 +516,12 @@ async def _run_comprehensive_collection_async(
                 "machine learning engineer",
                 "data scientist",
                 "AI engineer",
+                "artificial intelligence engineer",
                 "deep learning engineer",
                 "MLOps engineer",
                 "research scientist machine learning",
                 "NLP engineer",
+                "natural language processing",
                 "computer vision engineer",
                 "data engineer machine learning",
                 "AI researcher",
@@ -592,26 +529,16 @@ async def _run_comprehensive_collection_async(
                 "AI product manager",
             ]
 
-            logger.info(
-                "Starting comprehensive job search",
-                queries=len(comprehensive_searches),
-                ticker=ticker,
-                sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
-            )
+            logger.info("Starting comprehensive job search", queries=len(comprehensive_searches), ticker=ticker)
 
-            for i, search_query in enumerate(comprehensive_searches):
-                if i > 0:
-                    time.sleep(2.0)
+            for search_query in comprehensive_searches:
                 try:
                     jobs = scrape_job_postings(
                         search_query=search_query,
-                        sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
+                        sources=["indeed", "google"],
                         location=job_location,
-                        max_results_per_source=_COMPREHENSIVE_MAX_RESULTS_PER_SOURCE,
+                        max_results_per_source=100,
                         target_company_name=company_name,
-                        target_company_aliases=company_aliases,
-                        ticker=ticker,
-                        cap_after_match=_COMPREHENSIVE_CAP_PER_QUERY,
                     )
                     all_jobs.extend(jobs)
                     if jobs:
@@ -619,24 +546,17 @@ async def _run_comprehensive_collection_async(
                 except Exception as e:
                     logger.warning("Search query failed", query=search_query, error=str(e))
 
-            # Deduplicate by normalized URL (boards add different tracking params)
+            # Deduplicate by URL
             seen_urls = set()
             unique_jobs = []
             for job in all_jobs:
-                key = _normalize_job_url(job.url or "")
-                if key:
-                    if key not in seen_urls:
-                        seen_urls.add(key)
+                job_url = job.url or ""
+                if job_url:
+                    if job_url not in seen_urls:
+                        seen_urls.add(job_url)
                         unique_jobs.append(job)
                 else:
                     unique_jobs.append(job)
-
-            if len(unique_jobs) > _COMPREHENSIVE_MAX_UNIQUE_JOBS:
-                unique_jobs = sorted(
-                    unique_jobs,
-                    key=job_posting_relevance,
-                    reverse=True,
-                )[:_COMPREHENSIVE_MAX_UNIQUE_JOBS]
 
             job_signals = job_postings_to_signals(company_id, unique_jobs)
             all_signals.extend(job_signals)
@@ -649,6 +569,7 @@ async def _run_comprehensive_collection_async(
         # 2. TECH STACK (company_domains, fallback map, or yfinance)
         # ========================================
         try:
+            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
             if domain:
                 tech_inputs = scrape_tech_signal_inputs(company=ticker, company_domain_or_url=domain)
                 tech_signals = tech_inputs_to_signals(company_id, tech_inputs)
@@ -693,21 +614,43 @@ async def _run_comprehensive_collection_async(
             logger.exception("❌ Leadership board signal failed", error=str(e))
 
         # --- 4b. EXTERNAL: scrape company leadership page + careers page ---
+        # Guard: if existing leadership data is richer than what the fresh scrape
+        # produces, keep the existing data and skip the overwrite.
+        # Condition to SKIP: existing signals >= _MIN_LEADERSHIP_SIGNALS_TO_PROTECT
+        #                    AND existing avg >= fresh score
+        # This permanently protects tickers like WMT (35 signals, avg 70) and
+        # JPM (68 signals, avg 56.6) from being overwritten by a worse scrape.
         try:
+            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
             if domain:
                 base_url = f"https://{domain}" if not domain.startswith("http") else domain
                 exec_profiles = scrape_leadership_profiles(company=company_name, base_url=base_url, ticker=ticker)
+
                 if exec_profiles:
-                    scraped_signal = leadership_profiles_to_aggregated_signal(
-                        company_id=company_id,
-                        executives=exec_profiles,
-                    )
-                    all_signals.append(scraped_signal)
-                    logger.info(
-                        "✅ Leadership scraped signal added",
-                        score=scraped_signal.score,
-                        exec_count=len(exec_profiles),
-                    )
+                    fresh_score = int(calculate_leadership_score_0_1(exec_profiles) * 100)
+                    existing_cnt, existing_avg = _get_existing_leadership_stats(db, company_id)
+
+                    if existing_cnt >= _MIN_LEADERSHIP_SIGNALS_TO_PROTECT and existing_avg >= fresh_score:
+                        logger.info(
+                            "⏭️  Leadership guard: keeping existing data (richer than fresh scrape)",
+                            ticker=ticker,
+                            existing_signals=existing_cnt,
+                            existing_avg=round(existing_avg, 1),
+                            fresh_score=fresh_score,
+                        )
+                    else:
+                        scraped_signal = leadership_profiles_to_aggregated_signal(
+                            company_id=company_id,
+                            executives=exec_profiles,
+                        )
+                        all_signals.append(scraped_signal)
+                        logger.info(
+                            "✅ Leadership scraped signal added",
+                            score=scraped_signal.score,
+                            exec_count=len(exec_profiles),
+                            existing_signals=existing_cnt,
+                            existing_avg=round(existing_avg, 1),
+                        )
                 else:
                     logger.warning("⚠️ Scraper returned 0 profiles", ticker=ticker)
             else:
@@ -754,32 +697,7 @@ async def _run_comprehensive_collection_async(
         db.close()
 
 
-def run_comprehensive_collection_task(
-    company_id: str,
-    company_name: str,
-    ticker: str,
-    years: int,
-    job_location: str,
-) -> None:
-    """
-    Sync entry for BackgroundTasks (runs in Starlette's thread pool + fresh asyncio loop).
-    Avoids asyncio.CancelledError when the server's main loop shuts down async background work.
-    """
-    try:
-        asyncio.run(
-            _run_comprehensive_collection_async(
-                company_id,
-                company_name,
-                ticker,
-                years,
-                job_location,
-            )
-        )
-    except Exception as e:
-        logger.exception("❌ Collection failed", ticker=ticker, error=str(e))
-
-
-async def _run_patent_only_async(company_id: str, company_name: str, ticker: str, years: int):
+async def run_patent_only_task(company_id: str, company_name: str, ticker: str, years: int):
     try:
         db = SnowflakeService()
 
@@ -821,21 +739,9 @@ async def _run_patent_only_async(company_id: str, company_name: str, ticker: str
             pass
 
 
-def run_patent_only_task(company_id: str, company_name: str, ticker: str, years: int) -> None:
-    try:
-        asyncio.run(_run_patent_only_async(company_id, company_name, ticker, years))
-    except Exception as e:
-        logger.exception("Patent task failed", ticker=ticker, error=str(e))
-
-
-def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_location: str):
+async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_location: str):
     try:
         db = SnowflakeService()
-        company_aliases = _build_company_aliases(
-            company_name=company_name,
-            ticker=ticker,
-            domain=db.get_domain_for_company(company_id=company_id, ticker=ticker),
-        )
         all_jobs = []
 
         searches = [
@@ -847,19 +753,14 @@ def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_loca
             "NLP engineer",
         ]
 
-        for i, query in enumerate(searches):
-            if i > 0:
-                time.sleep(2.0)
+        for query in searches:
             try:
                 jobs = scrape_job_postings(
                     search_query=query,
-                    sources=list(DEFAULT_JOB_SCRAPER_SOURCES),
+                    sources=["indeed", "google"],
                     location=job_location,
-                    max_results_per_source=_JOBS_ONLY_MAX_RESULTS_PER_SOURCE,
+                    max_results_per_source=100,
                     target_company_name=company_name,
-                    target_company_aliases=company_aliases,
-                    ticker=ticker,
-                    cap_after_match=_JOBS_ONLY_CAP_PER_QUERY,
                 )
                 all_jobs.extend(jobs)
             except Exception as e:
@@ -868,16 +769,11 @@ def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_loca
         seen = set()
         unique = []
         for job in all_jobs:
-            key = _normalize_job_url(job.url or "")
-            if key:
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(job)
-            else:
+            if job.url and job.url not in seen:
+                seen.add(job.url)
                 unique.append(job)
-
-        if len(unique) > _JOBS_ONLY_MAX_UNIQUE:
-            unique = sorted(unique, key=job_posting_relevance, reverse=True)[:_JOBS_ONLY_MAX_UNIQUE]
+            elif not job.url:
+                unique.append(job)
 
         inserted_count = 0
         if unique:
@@ -927,15 +823,15 @@ async def run_batch_collection_task(years: int):
             db = SnowflakeService()
             try:
                 if company_id and company_name:
-                    await asyncio.to_thread(
-                        run_comprehensive_collection_task,
-                        company_id,
-                        company_name,
-                        ticker,
-                        years,
-                        "United States",
+                    await run_comprehensive_collection_task(
+                        company_id=company_id,
+                        company_name=company_name,
+                        ticker=ticker,
+                        years=years,
+                        job_location="United States",
                     )
 
+                    import asyncio
                     await asyncio.sleep(30)
 
             finally:

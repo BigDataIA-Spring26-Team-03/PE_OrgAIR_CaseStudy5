@@ -54,19 +54,20 @@ ROLE_WEIGHTS: dict[str, float] = {
 # ============================================================================
 
 _TITLE_INDICATOR_MAP: list[tuple[re.Pattern, AIBackgroundType]] = [
-    (re.compile(r"chief\s+ai\s+officer|c\.?a\.?i\.?o", re.I),                             AIBackgroundType.CHIEF_AI_OFFICER),
-    (re.compile(r"chief\s+(data|digital|analytics|(data\s+[&]\s+analytics)|(data\s+and\s+analytics))\s+officer|c\.?d\.?[ao]", re.I),        AIBackgroundType.AI_COMPANY_VETERAN),
-    (re.compile(r"chief\s+technology\s+officer|c\.?t\.?o", re.I),                         AIBackgroundType.AI_COMPANY_VETERAN),
-    (re.compile(r"chief\s+(information|innovation)\s+officer", re.I),                     AIBackgroundType.AI_COMPANY_VETERAN),
-    (re.compile(r"(vp|vice\s+president).{0,40}(ai|machine.learning|data.science)", re.I), AIBackgroundType.AI_BOARD_MEMBER),
-    (re.compile(r"(director|head|lead).{0,40}(ai|machine.learning|data.science|analytics)", re.I), AIBackgroundType.AI_BOARD_MEMBER),
-    (re.compile(r"\b(ai|ml|machine.learning|data.science|analytics)\b", re.I),            AIBackgroundType.AI_KEYWORDS_ONLY),
+    (re.compile(r"chief\s+ai\s+officer|c\.?a\.?i\.?o", re.I),                                                          AIBackgroundType.CHIEF_AI_OFFICER),
+    (re.compile(r"chief\s+(data|digital|analytics|(data\s+[&]\s+analytics)|(data\s+and\s+analytics))\s+officer|c\.?d\.?[ao]", re.I), AIBackgroundType.AI_COMPANY_VETERAN),
+    (re.compile(r"chief\s+technology\s+officer|c\.?t\.?o", re.I),                                                      AIBackgroundType.AI_COMPANY_VETERAN),
+    (re.compile(r"chief\s+(information|innovation)\s+officer", re.I),                                                  AIBackgroundType.AI_COMPANY_VETERAN),
+    (re.compile(r"(vp|vice\s+president).{0,40}(ai|machine.learning|data.science)", re.I),                              AIBackgroundType.AI_BOARD_MEMBER),
+    (re.compile(r"(director|head|lead).{0,40}(ai|machine.learning|data.science|analytics)", re.I),                     AIBackgroundType.AI_BOARD_MEMBER),
+    (re.compile(r"\b(ai|ml|machine.learning|data.science|analytics)\b", re.I),                                         AIBackgroundType.AI_KEYWORDS_ONLY),
 ]
 
 _AI_COMPANY_NAMES = re.compile(
     r"\b(nvidia|openai|deepmind|google brain|google ai|meta ai|microsoft ai|"
     r"anthropic|databricks|hugging face|palantir|c3\.ai|scale ai|cohere|"
-    r"mistral|stability ai|inflection)\b",
+    r"mistral|stability ai|inflection|"
+    r"microsoft|alphabet|google|meta|amazon|salesforce|oracle|ibm)\b",
     re.I,
 )
 
@@ -74,20 +75,18 @@ _BIO_INDICATOR_MAP: list[tuple[re.Pattern, AIBackgroundType]] = [
     (re.compile(r"ph\.?\s*d.{0,80}(machine.learning|artificial.intelligence|deep.learning|nlp|computer.vision)", re.I), AIBackgroundType.PHD_AI_ML),
     (re.compile(r"(machine.learning|artificial.intelligence|deep.learning).{0,80}ph\.?\s*d", re.I),                     AIBackgroundType.PHD_AI_ML),
     (re.compile(r"(google|deepmind|openai|meta ai|microsoft research|amazon|nvidia).{0,60}(engineer|scientist|researcher|director)", re.I), AIBackgroundType.AI_COMPANY_VETERAN),
-    (re.compile(r"published.{0,60}(machine.learning|ai|nlp|neural)", re.I),               AIBackgroundType.ML_PUBLICATIONS),
-    (re.compile(r"(patent|inventor).{0,60}(ai|machine.learning|algorithm)", re.I),        AIBackgroundType.AI_PATENTS),
-    (re.compile(r"(certified|certification).{0,60}(ai|machine.learning|data.science)", re.I), AIBackgroundType.AI_CERTIFICATION),
+    (re.compile(r"published.{0,60}(machine.learning|ai|nlp|neural)", re.I),                                            AIBackgroundType.ML_PUBLICATIONS),
+    (re.compile(r"(patent|inventor).{0,60}(ai|machine.learning|algorithm)", re.I),                                     AIBackgroundType.AI_PATENTS),
+    (re.compile(r"(certified|certification).{0,60}(ai|machine.learning|data.science)", re.I),                          AIBackgroundType.AI_CERTIFICATION),
     (re.compile(r"\b(machine.learning|deep.learning|artificial.intelligence|neural.network|nlp|generative.ai)\b", re.I), AIBackgroundType.AI_KEYWORDS_ONLY),
 ]
 
-# Job posting title patterns
 _AI_LEADERSHIP_JOB_PATTERNS = re.compile(
     r"(director|vp|vice.president|head|lead|principal|chief).{0,40}"
     r"(ai|machine.learning|data.science|analytics|artificial.intelligence|ml)",
     re.I,
 )
 
-# Noise words to filter out from name candidate lines
 _NOISE_NAMES = {
     "read more", "learn more", "investor relations", "ceo letters",
     "view all", "see more", "our team", "meet the team", "back to top",
@@ -98,7 +97,6 @@ _NOISE_NAMES = {
     "media contacts", "all contacts", "newsroom updates",
 }
 
-# Leadership page URL path candidates
 _LEADERSHIP_PATHS = [
     "/en-us/about/leadership",
     "/en-us/leadership",
@@ -122,49 +120,53 @@ _LEADERSHIP_PATHS = [
     "/company",
 ]
 
-# Ticker-specific overrides
+# Ticker-specific URL overrides — one entry per ticker, no duplicates
 _TICKER_LEADERSHIP_OVERRIDES: dict[str, list[str]] = {
+    "AAPL": ["https://www.apple.com/leadership/"],
+    "ADP":  ["https://www.adp.com/about-adp/leadership.aspx"],
+    "AMZN": [
+        "https://ir.aboutamazon.com/officers-and-directors/",
+        "https://www.aboutamazon.com/about-us/leadership",
+    ],
+    "CAT":  [
+        "https://www.caterpillar.com/en/company/governance/officers.html",
+        "https://www.caterpillar.com/en/company/governance/board-of-directors.html",
+    ],
+    "DE":   ["https://www.deere.com/en/our-company/leadership/"],
+    "DG":   ["https://investor.dollargeneral.com/governance/executive-leadership"],
+    "DPA":  ["https://www.decimalpointanalytics.com/about-us"],
+    "GE":   ["https://www.ge.com/about-us/leadership"],
+    "GOOG": ["https://abc.xyz/leadership/"],
+    "GOOGL":["https://abc.xyz/leadership/"],
+    "GS":   ["https://www.goldmansachs.com/our-firm/leadership"],
+    "HCA":  ["https://hcahealthcare.com/about/leadership-team.dot"],
+    "JNJ":  [
+        "https://www.jnj.com/leadership",
+        "https://investors.jnj.com/governance/executive-leadership",
+    ],
+    "JPM":  [
+        "https://www.jpmorganchase.com/about/our-leadership",
+        "https://www.jpmorgan.com/about-us/our-leadership",
+    ],
+    "META": [
+        "https://investor.atmeta.com/leadership-and-governance/",
+        "https://about.meta.com/company-info/",
+    ],
+    "MSFT": [
+        "https://news.microsoft.com/source/leadership",
+        "https://www.microsoft.com/en-us/about/leadership",
+    ],
     "NVDA": [
         "https://nvidianews.nvidia.com/bios",
         "https://www.nvidia.com/en-us/about-nvidia/governance/management-team/",
     ],
-    "MSFT": [
-        "https://www.microsoft.com/en-us/about/leadership",
-    ],
-    "GOOGL": [
-        "https://about.google/intl/en/our-story/leadership/",
-    ],
-    "GOOG": [
-        "https://about.google/intl/en/our-story/leadership/",
-    ],
-    "META": [
-        "https://about.meta.com/company-info/",
-    ],
-    "AMZN": [
-        "https://www.aboutamazon.com/about-us/leadership",
-    ],
-    "JPM": [
-        "https://www.jpmorganchase.com/about/our-leadership",
-        "https://www.jpmorgan.com/about-us/our-leadership",
-    ],
-    "CAT": [
-        "https://www.caterpillar.com/en/company/governance/executive-officers.html",
-        "https://www.caterpillar.com/en/company/leadership.html",
-        "https://www.caterpillar.com/en/company/governance.html",
-        "https://investor.caterpillar.com/governance/executive-officers/default.aspx",
-    ],
-    "WMT": [
-        "https://corporate.walmart.com/about/leadership",
-    ],
-    "GE": [
-        "https://www.ge.com/about-us/leadership",
-    ],
-    "GS": [
-        "https://www.goldmansachs.com/our-firm/leadership",
-    ],
+    "PAYX": ["https://www.paychex.com/corporate/executive-team"],
+    "TGT":  ["https://corporate.target.com/about/leadership"],
+    "TSLA": ["https://ir.tesla.com/corporate-governance/executive-officers"],
+    "UNH":  ["https://www.unitedhealthgroup.com/who-we-are/leadership.html"],
+    "WMT":  ["https://corporate.walmart.com/about/leadership"],
 }
 
-# Career page path candidates
 _CAREERS_PATHS = [
     "/careers",
     "/jobs",
@@ -219,12 +221,10 @@ def _max_indicator_score(indicators: List[AIBackgroundType]) -> float:
 
 
 def _indicators_from_title(title: str) -> List[AIBackgroundType]:
-    found = []
     for pattern, indicator in _TITLE_INDICATOR_MAP:
         if pattern.search(title):
-            found.append(indicator)
-            break
-    return found
+            return [indicator]
+    return []
 
 
 def _indicators_from_bio(bio: str) -> List[AIBackgroundType]:
@@ -240,7 +240,6 @@ def _indicators_from_bio(bio: str) -> List[AIBackgroundType]:
 
 
 def _indicators_from_company(company: str) -> List[AIBackgroundType]:
-    """Baseline indicator derived from the company name itself."""
     if _AI_COMPANY_NAMES.search(company):
         return [AIBackgroundType.AI_COMPANY_VETERAN]
     return [AIBackgroundType.AI_KEYWORDS_ONLY]
@@ -256,10 +255,6 @@ def _signal_id(company_id: str, name: str, title: str, url: Optional[str]) -> st
 # ============================================================================
 
 def _scrape_wikipedia_bio(exec_name: str) -> str:
-    """
-    Fetch executive bio using Wikipedia REST API (returns clean summary text).
-    Falls back to empty string on failure.
-    """
     try:
         import requests
         name_slug = exec_name.strip().replace(" ", "_")
@@ -278,26 +273,19 @@ def _scrape_wikipedia_bio(exec_name: str) -> str:
 # SCRAPING — Company leadership page
 # ============================================================================
 
-def _fetch_page_text(url: str) -> Optional[str]:
-    """
-    Fetch a URL with StealthyFetcher (bypasses Cloudflare / anti-bot).
-    Returns full page text or None on failure.
-    """
+def _fetch_page_text(url: str, strip_tags: bool = True) -> Optional[str]:
     try:
         from scrapling.fetchers import StealthyFetcher
         page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=30000)
-        return page.get_all_text(ignore_tags=("script", "style"))
+        if strip_tags:
+            return page.get_all_text(ignore_tags=("script", "style"))
+        return page.get_all_text()
     except Exception as e:
         logger.debug("StealthyFetcher failed for %s: %s", url, e)
         return None
 
 
 def _find_leadership_page(base_url: str, ticker: str = "") -> Optional[tuple[str, str]]:
-    """
-    Try known leadership URL paths. Returns (url, page_text) for the first
-    that loads and contains leadership-like content, else None.
-    Checks ticker-specific overrides first, then generic paths on base_url.
-    """
     candidates: list[str] = []
 
     if ticker and ticker.upper() in _TICKER_LEADERSHIP_OVERRIDES:
@@ -306,23 +294,24 @@ def _find_leadership_page(base_url: str, ticker: str = "") -> Optional[tuple[str
     for path in _LEADERSHIP_PATHS:
         candidates.append(base_url.rstrip("/") + path)
 
+    leadership_keywords = ("chief", "president", "officer", "vice", "director", "vp", "founder")
+
     for url in candidates:
-        text = _fetch_page_text(url)
-        if text and len(text) > 300:
-            tl = text.lower()
-            if any(kw in tl for kw in ("chief", "president", "officer", "vice", "director", "vp", "founder")):
-                logger.info("Found leadership page: %s", url)
-                return url, text
+        text = _fetch_page_text(url, strip_tags=True)
+        if text and len(text) > 300 and any(kw in text.lower() for kw in leadership_keywords):
+            logger.info("Found leadership page: %s", url)
+            return url, text
+        # Retry without tag stripping for sites that embed exec names in nav/footer
+        if text is not None and len(text) <= 300:
+            text_full = _fetch_page_text(url, strip_tags=False)
+            if text_full and len(text_full) > 300 and any(kw in text_full.lower() for kw in leadership_keywords):
+                logger.info("Found leadership page (full text fallback): %s", url)
+                return url, text_full
 
     return None
 
 
 def _parse_executives_from_text(page_text: str, company: str, page_url: str) -> List[LeadershipProfile]:
-    """
-    Heuristic parser: finds Name + Title pairs from a leadership page.
-    Looks for C-suite / VP / Director title keywords, then finds the
-    adjacent line that is a person's name.
-    """
     profiles: List[LeadershipProfile] = []
     seen_names: set[str] = set()
 
@@ -338,7 +327,6 @@ def _parse_executives_from_text(page_text: str, company: str, page_url: str) -> 
         if not title_pattern.search(line):
             continue
 
-        # Strip trailing "since YYYY" or date noise from title
         title = re.sub(r"\s*(since|,)?\s*\d{4}.*$", "", line).strip() or line
         name = None
 
@@ -352,7 +340,9 @@ def _parse_executives_from_text(page_text: str, company: str, page_url: str) -> 
                     and not title_pattern.search(candidate)
                     and len(candidate) < 60
                     and _normalize(candidate) not in _NOISE_NAMES
-                    and not candidate.lower().startswith(("read ", "learn ", "view ", "see ", "skip ", "back ", "annual ", "quarterly "))
+                    and not candidate.lower().startswith(
+                        ("read ", "learn ", "view ", "see ", "skip ", "back ", "annual ", "quarterly ")
+                    )
                 ):
                     name = candidate
                     break
@@ -372,9 +362,15 @@ def _parse_executives_from_text(page_text: str, company: str, page_url: str) -> 
         if wiki_bio:
             indicators.extend(_indicators_from_bio(wiki_bio))
 
-        # Fallback: use company-level signal if no indicators found
         if not indicators:
             indicators.extend(_indicators_from_company(company))
+        else:
+            # Upgrade AI_KEYWORDS_ONLY → AI_COMPANY_VETERAN for execs at known AI companies
+            if (
+                indicators == [AIBackgroundType.AI_KEYWORDS_ONLY]
+                and _AI_COMPANY_NAMES.search(company)
+            ):
+                indicators = [AIBackgroundType.AI_COMPANY_VETERAN]
 
         indicators = list(dict.fromkeys(indicators))
 
@@ -398,16 +394,12 @@ def _parse_executives_from_text(page_text: str, company: str, page_url: str) -> 
 # ============================================================================
 
 def _scrape_ai_leadership_jobs(base_url: str, company: str) -> List[LeadershipProfile]:
-    """
-    Scan the careers page for Director/VP/Head-level AI job postings.
-    Each matching posting is treated as an AI_BOARD_MEMBER-level signal.
-    """
     profiles: List[LeadershipProfile] = []
     seen: set[str] = set()
 
     for path in _CAREERS_PATHS:
         url = base_url.rstrip("/") + path
-        text = _fetch_page_text(url)
+        text = _fetch_page_text(url, strip_tags=True)
         if not text:
             continue
 
@@ -448,8 +440,8 @@ def scrape_leadership_profiles(company: str, base_url: str, ticker: str = "") ->
       1. Company leadership/about page  → executive name + title + Wikipedia bio
       2. Company careers page           → open AI Director/VP/Head roles
 
-    ticker is optional but recommended — enables ticker-specific URL overrides.
-    Falls back to empty list if scraping fails — never raises.
+    Returns [] if both sources fail — callers should handle gracefully.
+    Never raises.
     """
     profiles: List[LeadershipProfile] = []
 
@@ -539,7 +531,7 @@ def leadership_profiles_to_signals(company_id: str, executives: List[LeadershipP
                 source=SignalSource.external,
                 signal_date=now,
                 score=score_0_100,
-                title=f"{e.name} — {e.title}",
+                title=f"{e.name} — {e.title}"[:300],
                 url=e.url,
                 metadata_json=json.dumps(meta, default=str),
             )
