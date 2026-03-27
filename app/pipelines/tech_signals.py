@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 from statistics import mean
-from typing import List, Optional, Set, Dict, Iterable
+from typing import List, Optional, Set, Dict, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,9 +27,10 @@ class TechSignalInput:
     observed_date: Optional[str] = None
 
 
-# -----------------------------
-# Keyword dictionaries (expandable)
-# -----------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Keyword dictionaries
+# ─────────────────────────────────────────────────────────────────────────────
+
 CORE_AI_TECH: Set[str] = {
     "openai", "chatgpt", "gpt", "llm", "transformers", "rag", "vector database",
     "pytorch", "tensorflow", "keras", "hugging face", "langchain", "llamaindex",
@@ -62,10 +63,8 @@ WEB_STACK_TECH: Set[str] = {
     "stripe", "paypal",
 }
 
-# Pages to scan per company — subpages with highest tech signal density
-# Ordered by expected signal richness
 SCAN_PATHS = [
-    "",                  # homepage
+    "",
     "/about",
     "/technology",
     "/engineering",
@@ -76,76 +75,66 @@ SCAN_PATHS = [
     "/innovation",
 ]
 
-# Company-specific overrides for known high-signal pages
 COMPANY_SCAN_OVERRIDES: Dict[str, List[str]] = {
     "NVDA": [
-        "",
-        "/en-us/about-nvidia/",
-        "/en-us/research/",
-        "/en-us/industries/",
-        "/careers",
+        "https://www.nvidia.com/en-us/ai/",
+        "https://www.nvidia.com/en-us/deep-learning-ai/",
+        "https://nvidianews.nvidia.com/bios",
+        "https://developer.nvidia.com/deep-learning",
     ],
-    "JPM": [
-        "",
-        "/technology",
-        "/about-jpmorgan-chase",
-        "/careers",
-        "/technology/engineering",
+    "JPM":  [
+        "https://www.jpmorgan.com/technology",
+        "https://www.jpmorganchase.com/about/our-leadership",
+        "https://www.jpmorgan.com/technology/technology-blog",
+        "https://careers.jpmorgan.com/us/en/our-business/technology",
     ],
-    "WMT": [
-        "",
-        "/about",
-        "/careers",
-        "/technology",
-        "/innovation",
-    ],
-    "GE": [
-        "",
-        "/about",
-        "/digital",
-        "/research",
-        "/careers",
-    ],
-    "DG": [
-        "",
-        "/about",
-        "/careers",
-        "/technology",
-    ],
-    "TSLA": [
-        "",
-        "/about",
-        "/careers",
-        "/energy",
-        "/ai",
-        "/supercharger",
-    ],
+    "WMT":  ["", "/about", "/careers", "/technology", "/innovation"],
+    "GE":   ["", "/about", "/digital", "/research", "/careers"],
+    "DG":   ["", "/about", "/careers", "/technology"],
+    "TSLA": ["", "/about", "/careers", "/energy", "/ai"],
     "MSFT": [
-        "",
-        "/about",
-        "/careers",
-        "/en-us/research",
-        "/azure",
+        "https://azure.microsoft.com/en-us/solutions/ai",
+        "https://www.microsoft.com/en-us/ai",
+        "https://engineering.microsoft.com",
+        "https://news.microsoft.com/source/features/ai/",
+        "https://www.microsoft.com/en-us/research/",
     ],
-    # Alphabet (GOOGL): yfinance returns abc.xyz — use google.com + AI-rich paths
+    "META": [
+        "https://engineering.fb.com",
+        "https://ai.meta.com",
+        "https://about.meta.com/company-info/",
+        "https://engineering.fb.com/category/ml-applications/",
+    ],
+    "AAPL": [
+        "https://machinelearning.apple.com",
+        "https://www.apple.com/artificial-intelligence/",
+        "https://developer.apple.com/machine-learning/",
+        "https://www.apple.com/careers/us/machine-learning-and-ai.html",
+    ],
+    "AMZN": [
+        "https://www.amazon.science",
+        "https://aws.amazon.com/machine-learning/",
+        "https://aws.amazon.com/ai/",
+        "https://www.amazon.jobs/en/landing_pages/ML",
+    ],
     "GOOGL": [
-        "",
-        "/technology/",
-        "/about/",
-        "/search/howsearchworks/",
-        "/cloud/",
-        "/careers/",
+        "https://ai.google",
+        "https://research.google",
+        "https://cloud.google.com/ai",
+        "https://deepmind.google",
+        "https://about.google/intl/en/products/",
     ],
     "GOOG": [
-        "",
-        "/technology/",
-        "/about/",
-        "/search/howsearchworks/",
-        "/cloud/",
-        "/careers/",
+        "https://ai.google",
+        "https://research.google",
+        "https://cloud.google.com/ai",
     ],
 }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _normalize(text: str) -> str:
     return (text or "").lower()
@@ -166,11 +155,6 @@ def extract_tech_mentions(text: str) -> Set[str]:
 
 
 def calculate_tech_adoption_score(mentions: Set[str], title: str) -> float:
-    """
-    Score 0..1 based on number and type of tech mentions.
-    Raised caps vs original to allow proper differentiation between companies.
-    NVDA/JPM should score significantly higher than DG/GE.
-    """
     if not mentions:
         return 0.0
 
@@ -179,13 +163,11 @@ def calculate_tech_adoption_score(mentions: Set[str], title: str) -> float:
     cloud_hits = sum(1 for m in mentions if m in CLOUD_AI_SERVICES)
     web_hits   = sum(1 for m in mentions if m in WEB_STACK_TECH)
 
-    # Raised caps — allow genuine differentiation between tech-heavy vs light companies
-    # Original caps (3,3,2,4) compressed everything into a narrow band
     score = (
-        min(core_hits,  8) * 0.10 +   # max 0.80 — AI/ML is most important signal
-        min(data_hits,  6) * 0.07 +   # max 0.42 — data platform maturity
-        min(cloud_hits, 4) * 0.08 +   # max 0.32 — cloud AI services adoption
-        min(web_hits,   6) * 0.03     # max 0.18 — web stack (weakest signal)
+        min(core_hits,  8) * 0.10 +
+        min(data_hits,  6) * 0.07 +
+        min(cloud_hits, 4) * 0.08 +
+        min(web_hits,   6) * 0.03
     )
 
     title_lower = _normalize(title)
@@ -198,9 +180,6 @@ def calculate_tech_adoption_score(mentions: Set[str], title: str) -> float:
     return min(score + title_boost, 1.0)
 
 
-# -----------------------------
-# HTTP helpers
-# -----------------------------
 def _ensure_url(domain_or_url: str) -> str:
     x = (domain_or_url or "").strip()
     if not x:
@@ -210,66 +189,72 @@ def _ensure_url(domain_or_url: str) -> str:
     return f"https://{x}"
 
 
-def _fetch_html(url: str, timeout: int = 20) -> str:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
-    }
-    r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-    r.raise_for_status()
-    return r.text or ""
+# ─────────────────────────────────────────────────────────────────────────────
+# Fetching — StealthyFetcher primary, requests fallback
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_page_content(url: str, timeout: int = 20) -> Tuple[str, bool]:
+    """
+    Fetch page content. Returns (text, is_plain_text).
+    - is_plain_text=True  → StealthyFetcher returned plain text (no BeautifulSoup needed)
+    - is_plain_text=False → plain requests returned raw HTML (needs BeautifulSoup)
+
+    Tries StealthyFetcher first for JS-rendered sites, falls back to requests.
+    """
+    # Primary: StealthyFetcher — handles JS-rendered / anti-bot sites
+    try:
+        from scrapling.fetchers import StealthyFetcher
+        page = StealthyFetcher.fetch(url, headless=True, network_idle=True, timeout=30000)
+        text = page.get_all_text(ignore_tags=("script", "style", "nav", "footer"))
+        if text and len(text) > 200:
+            return text, True
+    except Exception:
+        pass
+
+    # Fallback: plain requests — fast, works for non-JS sites
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+        r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        r.raise_for_status()
+        return r.text or "", False
+    except Exception:
+        return "", False
 
 
-def _extract_visible_text(html: str) -> str:
+def _extract_from_html(html: str) -> str:
+    """Extract visible text + script srcs + meta content from raw HTML."""
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
-    text = soup.get_text(" ", strip=True)
-    return re.sub(r"\s+", " ", text)
+    visible = soup.get_text(" ", strip=True)
+    visible = re.sub(r"\s+", " ", visible)
+
+    srcs = " ".join(
+        str(s.get("src", "")) for s in soup.find_all("script") if s.get("src")
+    )
+    meta = " ".join(
+        tag.get("content", "") for tag in soup.find_all("meta") if tag.get("content")
+    )
+    return f"{visible} {srcs} {meta}"
 
 
-def _extract_script_srcs(html: str) -> List[str]:
-    soup = BeautifulSoup(html, "html.parser")
-    srcs = []
-    for s in soup.find_all("script"):
-        src = s.get("src")
-        if src:
-            srcs.append(str(src))
-    return srcs
+# ─────────────────────────────────────────────────────────────────────────────
+# Main collector
+# ─────────────────────────────────────────────────────────────────────────────
 
-
-def _extract_meta_content(html: str) -> str:
-    """Extract meta description and keywords — often contain tech stack hints."""
-    soup = BeautifulSoup(html, "html.parser")
-    parts = []
-    for tag in soup.find_all("meta"):
-        content = tag.get("content", "")
-        if content:
-            parts.append(content)
-    return " ".join(parts)
-
-
-# -----------------------------
-# REAL COLLECTION: multi-page scrape
-# -----------------------------
 def scrape_tech_signal_inputs(
     company: str,
     company_domain_or_url: str,
 ) -> List[TechSignalInput]:
     """
     Multi-page Digital Presence collector.
-
-    Scans homepage + key subpages to detect tech stack evidence.
-    Uses company-specific page overrides where available, falls back
-    to generic high-signal paths. Each page that yields tech mentions
-    becomes a separate TechSignalInput → separate ExternalSignal.
-
-    This produces multiple signals per company (5-9), allowing the
-    evidence_mapper confidence to scale with signal count, and giving
-    a meaningful spread between NVDA (high AI tech) and DG (low AI tech).
+    Uses StealthyFetcher (JS-capable) with requests fallback per page.
     """
     base_url = _ensure_url(company_domain_or_url).rstrip("/")
     if not base_url:
@@ -282,22 +267,24 @@ def scrape_tech_signal_inputs(
     homepage_added = False
 
     for path in paths:
-        url = f"{base_url}{path}"
-        try:
-            html = _fetch_html(url)
-        except Exception:
-            # Skip pages that 404/block — don't fail entire scan
+        # If path is already an absolute URL use it directly,
+        # otherwise append to base_url
+        if path.startswith("http://") or path.startswith("https://"):
+            url = path
+        else:
+            url = f"{base_url}{path}"
+        raw, is_plain = _fetch_page_content(url)
+
+        if not raw:
             continue
 
-        visible_text  = _extract_visible_text(html)
-        script_srcs   = " ".join(_extract_script_srcs(html))
-        meta_content  = _extract_meta_content(html)
-        combined      = f"{visible_text} {script_srcs} {meta_content}"
-        mentions      = extract_tech_mentions(combined)
+        # If StealthyFetcher returned plain text use directly,
+        # otherwise parse HTML with BeautifulSoup
+        combined = raw if is_plain else _extract_from_html(raw)
+        mentions = extract_tech_mentions(combined)
 
         page_label = path.strip("/") or "homepage"
 
-        # Always keep homepage even if no AI mentions (proves site is live)
         if not mentions and path != "" and homepage_added:
             continue
 
@@ -319,7 +306,6 @@ def scrape_tech_signal_inputs(
         if path == "":
             homepage_added = True
 
-    # Fallback: if nothing returned at all, record a failed scan signal
     if not results:
         return [TechSignalInput(
             title="Digital presence scan failed",
@@ -332,9 +318,10 @@ def scrape_tech_signal_inputs(
     return results
 
 
-# -----------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Convert + Aggregate
-# -----------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+
 def tech_inputs_to_signals(
     company_id: str,
     items: List[TechSignalInput],
@@ -379,29 +366,18 @@ def aggregate_tech_signals(
     if not tech_signals:
         tech_score = 0
     else:
-        # Weight by score — higher-scoring pages contribute more to aggregate
         scores = [s.score for s in tech_signals]
-        # Use top-3 average to avoid dilution from low-signal pages
         top_scores = sorted(scores, reverse=True)[:3]
         tech_score = int(round(mean(top_scores)))
 
-    jobs_score       = 0
-    patents_score    = 0
-    leadership_score = 0
-
-    composite_score = int(round(
-        0.30 * jobs_score +
-        0.25 * patents_score +
-        0.25 * tech_score +
-        0.20 * leadership_score
-    ))
+    composite_score = int(round(0.25 * tech_score))
 
     return CompanySignalSummary(
         company_id=company_id,
-        jobs_score=jobs_score,
+        jobs_score=0,
         tech_score=tech_score,
-        patents_score=patents_score,
-        leadership_score=leadership_score,
+        patents_score=0,
+        leadership_score=0,
         composite_score=composite_score,
         last_updated_at=datetime.utcnow(),
     )
