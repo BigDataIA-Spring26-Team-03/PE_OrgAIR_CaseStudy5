@@ -2,79 +2,98 @@
   "ticker": "META",
   "company_name": "Meta Platforms, Inc.",
   "sector": "Unknown",
-  "assessment_id": "7b492110-9691-4850-a1e2-ec26baca2219",
-  "scored_at": "2026-03-26T14:50:13.742029+00:00",
-  "final_score": 54.6990312,
-  "vr_score": 46.13544081,
-  "hr_score": 74.478,
-  "synergy_score": 34.36072321,
-  "position_factor": -0.0463752,
-  "talent_concentration": 0.7,
+  "assessment_id": "fe50e8b1-d851-41cc-8699-3429717f7e92",
+  "scored_at": "2026-03-26T23:06:09.801464+00:00",
+  "final_score": 66.0613632,
+  "vr_score": 62.96588264,
+  "hr_score": 76.7505,
+  "synergy_score": 48.32664308,
+  "position_factor": 0.1555908,
+  "talent_concentration": 0.2286,
   "confidence": {
-    "ci_lower": 48.60785385,
-    "ci_upper": 60.79014615,
-    "sem": 3.107727628,
-    "reliability": 0.9507246377,
-    "evidence_count": 41
+    "ci_lower": 63.3174,
+    "ci_upper": 68.8054,
+    "sem": 1.4,
+    "reliability": 0.99,
+    "evidence_count": 970
   },
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 50.0,
-      "contributing_sources": [],
-      "total_weight": 0.0,
-      "confidence": 0.0
+      "score": 72.93142857,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "Item 7 (MD&A)",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 0.7,
+      "confidence": 0.9969910325
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 40.0,
+      "score": 49.14285714,
       "contributing_sources": [
-        "board_composition"
+        "Item 1A (Risk)",
+        "board_composition",
+        "leadership_signals"
       ],
-      "total_weight": 0.7,
-      "confidence": 0.8075
+      "total_weight": 1.75,
+      "confidence": 0.984369
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 50.0,
-      "contributing_sources": [],
-      "total_weight": 0.0,
-      "confidence": 0.0
+      "score": 83.804,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 1.0,
+      "confidence": 0.984369
     },
     "talent": {
       "dimension": "talent",
-      "score": 60.78,
+      "score": 72.8025,
       "contributing_sources": [
-        "glassdoor_reviews"
+        "glassdoor_reviews",
+        "technology_hiring"
       ],
-      "total_weight": 0.1,
-      "confidence": 0.665
+      "total_weight": 0.8,
+      "confidence": 0.9355125
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 45.195,
+      "score": 48.052,
       "contributing_sources": [
+        "Item 7 (MD&A)",
         "board_composition",
-        "glassdoor_reviews"
+        "glassdoor_reviews",
+        "leadership_signals"
       ],
-      "total_weight": 0.4,
-      "confidence": 0.9355125
+      "total_weight": 1.5,
+      "confidence": 0.9930482475
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 50.0,
-      "contributing_sources": [],
-      "total_weight": 0.0,
-      "confidence": 0.0
+      "score": 72.17948718,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "Item 7 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 1.3,
+      "confidence": 0.984369
     },
     "culture": {
       "dimension": "culture",
-      "score": 60.78,
+      "score": 57.49894737,
       "contributing_sources": [
-        "glassdoor_reviews"
+        "glassdoor_reviews",
+        "leadership_signals"
       ],
-      "total_weight": 0.8,
-      "confidence": 0.665
+      "total_weight": 0.95,
+      "confidence": 0.8124
     }
   },
   "scoring_parameters": {

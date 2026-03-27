@@ -244,6 +244,14 @@ class ScoringIntegrationService:
             return data
         except requests.RequestException as e:
             logger.warning("cs2_evidence_fetch_failed", ticker=ticker, error=str(e))
+            # Trigger async signal collection so signals are available on the next scoring run
+            try:
+                collect_url = f"{self.api_base}/api/v1/signals/collect/{ticker}"
+                requests.post(collect_url, timeout=10)
+                logger.info("cs2_signal_collection_triggered", ticker=ticker,
+                            note="signals will be available on next scoring run")
+            except Exception:
+                pass
             return {"ticker": ticker, "signals": [], "signal_count": 0}
 
     def _select_latest_signal_snapshot(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -487,6 +495,13 @@ class ScoringIntegrationService:
 
             if not documents:
                 logger.warning("no_chunked_sec_documents", ticker=ticker)
+                try:
+                    collect_url = f"{self.api_base}/api/v1/documents/collect/{ticker}"
+                    requests.post(collect_url, timeout=10)
+                    logger.info("sec_collection_triggered", ticker=ticker,
+                                note="SEC chunks will be available on next scoring run")
+                except Exception:
+                    pass
                 return sec_sections
 
             logger.info(

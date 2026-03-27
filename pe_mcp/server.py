@@ -325,24 +325,36 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             try:
                 assessment = await cs3_client.get_assessment(company_id)
             except Exception:
-                # Cache miss or 404 — check if pipeline is already running or start it
                 logger.info(
                     "calculate_org_air_score: no cached assessment for %s, "
-                    "triggering on-demand pipeline in background", company_id
+                    "triggering pipeline and waiting for completion", company_id
                 )
                 async with httpx.AsyncClient() as _hx:
-                    await _hx.post(
+                    _resp = await _hx.post(
                         f"http://localhost:8000/api/v1/scoring/trigger/{company_id}",
                         timeout=10.0,
                     )
-                return [TextContent(type="text", text=json.dumps({
-                    "company_id": company_id,
-                    "status": "scoring_started",
-                    "message": (
-                        f"No cached score for {company_id}. Full pipeline started in "
-                        "FastAPI background (2-5 min). Ask for the score again once complete."
-                    ),
-                }, indent=2))]
+                task_id = _resp.json().get("task_id") if _resp.status_code == 200 else None
+
+                # Poll until complete (max 10 min, every 20s)
+                if task_id:
+                    for _ in range(30):
+                        await asyncio.sleep(20)
+                        async with httpx.AsyncClient() as _hx:
+                            status_resp = await _hx.get(
+                                f"http://localhost:8000/api/v1/scoring/status/{task_id}",
+                                timeout=10.0,
+                            )
+                        status_data = status_resp.json()
+                        if status_data.get("status") == "completed":
+                            break
+                        if status_data.get("status") == "failed":
+                            raise RuntimeError(f"Scoring failed: {status_data.get('error')}")
+
+                # Fetch the score now that pipeline is done
+                async with CS3Client() as _cs3:
+                    assessment = await _cs3.get_assessment(company_id)
+                freshly_scored = True
             # Record history snapshot 
             try:
                 await history_service.record_assessment(
@@ -376,8 +388,7 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             dim_key = arguments.get("dimension", "all")
             signal_cats = _DIMENSION_TO_SIGNALS.get(dim_key)
 
-            async with CS2Client() as cs2:
-                evidence = await cs2.get_evidence(
+            evidence = await cs2_client.get_evidence(
                     company_id=arguments["company_id"],
                     signal_categories=signal_cats,
                     limit=arguments.get("limit", 10),
@@ -539,11 +550,9 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             company_id = arguments["company_id"].upper().strip()
             days = int(arguments.get("days", 365))
             history = await history_service.get_history(company_id, days=days)
-            trend = await history_service.calculate_trend(company_id)
-            result = {
-                "company_id": company_id,
-                "days": days,
-                "trend": {
+            try:
+                trend = await history_service.calculate_trend(company_id)
+                trend_data = {
                     "current_org_air": trend.current_org_air,
                     "entry_org_air": trend.entry_org_air,
                     "delta_since_entry": trend.delta_since_entry,
@@ -551,7 +560,14 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
                     "delta_90d": trend.delta_90d,
                     "trend_direction": trend.trend_direction,
                     "snapshot_count": trend.snapshot_count,
-                },
+                }
+            except Exception as trend_exc:
+                logger.warning("get_assessment_history: trend failed for %s: %s", company_id, trend_exc)
+                trend_data = None
+            result = {
+                "company_id": company_id,
+                "days": days,
+                "trend": trend_data,
                 "history": [
                     {
                         "assessed_at": s.timestamp.isoformat(),
