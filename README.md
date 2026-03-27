@@ -18,7 +18,7 @@
 
 | Component | Link |
 |-----------|------|
-| Demo Video | [Demo Video](#) |
+| Demo Video | [[Demo Video](#)](https://github.com/BigDataIA-Spring26-Team-03/PE_OrgAIR_CaseStudy4.git) |
 | Interactive Codelab | [CS5 Agentic Portfolio Codelab](https://codelabs-preview.appspot.com/?file_id=1qHfY9Cs6SipX6US_RT8QELEkXO79qfaO5GIZLKRGJLc#0) |
 | Deployed FastAPI Link | |
 | Deployed App Link |  |
