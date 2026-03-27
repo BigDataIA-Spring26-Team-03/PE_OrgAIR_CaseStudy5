@@ -76,18 +76,59 @@ SCAN_PATHS = [
 ]
 
 COMPANY_SCAN_OVERRIDES: Dict[str, List[str]] = {
-    "NVDA": ["", "/en-us/about-nvidia/", "/en-us/research/", "/en-us/industries/", "/careers"],
-    "JPM":  ["", "/technology", "/about-jpmorgan-chase", "/careers", "/technology/engineering"],
+    "NVDA": [
+        "https://www.nvidia.com/en-us/ai/",
+        "https://www.nvidia.com/en-us/deep-learning-ai/",
+        "https://nvidianews.nvidia.com/bios",
+        "https://developer.nvidia.com/deep-learning",
+    ],
+    "JPM":  [
+        "https://www.jpmorgan.com/technology",
+        "https://www.jpmorganchase.com/about/our-leadership",
+        "https://www.jpmorgan.com/technology/technology-blog",
+        "https://careers.jpmorgan.com/us/en/our-business/technology",
+    ],
     "WMT":  ["", "/about", "/careers", "/technology", "/innovation"],
     "GE":   ["", "/about", "/digital", "/research", "/careers"],
     "DG":   ["", "/about", "/careers", "/technology"],
     "TSLA": ["", "/about", "/careers", "/energy", "/ai"],
-    "MSFT": ["", "/about", "/careers", "/en-us/research", "/azure"],
-    "META": ["", "/about", "/careers", "/ai", "/technology"],
-    "AAPL": ["", "/about", "/careers", "/mac", "/iphone"],
-    "AMZN": ["", "/about", "/technology", "/careers", "/devices"],
-    "GOOGL": ["", "/technology/", "/about/", "/search/howsearchworks/", "/cloud/", "/careers/"],
-    "GOOG":  ["", "/technology/", "/about/", "/search/howsearchworks/", "/cloud/", "/careers/"],
+    "MSFT": [
+        "https://azure.microsoft.com/en-us/solutions/ai",
+        "https://www.microsoft.com/en-us/ai",
+        "https://engineering.microsoft.com",
+        "https://news.microsoft.com/source/features/ai/",
+        "https://www.microsoft.com/en-us/research/",
+    ],
+    "META": [
+        "https://engineering.fb.com",
+        "https://ai.meta.com",
+        "https://about.meta.com/company-info/",
+        "https://engineering.fb.com/category/ml-applications/",
+    ],
+    "AAPL": [
+        "https://machinelearning.apple.com",
+        "https://www.apple.com/artificial-intelligence/",
+        "https://developer.apple.com/machine-learning/",
+        "https://www.apple.com/careers/us/machine-learning-and-ai.html",
+    ],
+    "AMZN": [
+        "https://www.amazon.science",
+        "https://aws.amazon.com/machine-learning/",
+        "https://aws.amazon.com/ai/",
+        "https://www.amazon.jobs/en/landing_pages/ML",
+    ],
+    "GOOGL": [
+        "https://ai.google",
+        "https://research.google",
+        "https://cloud.google.com/ai",
+        "https://deepmind.google",
+        "https://about.google/intl/en/products/",
+    ],
+    "GOOG": [
+        "https://ai.google",
+        "https://research.google",
+        "https://cloud.google.com/ai",
+    ],
 }
 
 
@@ -226,7 +267,12 @@ def scrape_tech_signal_inputs(
     homepage_added = False
 
     for path in paths:
-        url = f"{base_url}{path}"
+        # If path is already an absolute URL use it directly,
+        # otherwise append to base_url
+        if path.startswith("http://") or path.startswith("https://"):
+            url = path
+        else:
+            url = f"{base_url}{path}"
         raw, is_plain = _fetch_page_content(url)
 
         if not raw:
