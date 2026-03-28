@@ -7,12 +7,14 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 RUN pip install --no-cache-dir streamlit pandas plotly
 
-# Copy full project (dashboard + shared modules)
+# Full project: streamlit_app + dashboard modules + src
 COPY . /app
 
 EXPOSE 8501
 
 # Streamlit talks to FastAPI service over Docker network
 ENV API_BASE_URL=http://api:8000
+# So `from api_client import APIClient` resolves (module lives under streamlit_app/)
+ENV PYTHONPATH=/app/streamlit_app:/app
 
-CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "streamlit_app/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
