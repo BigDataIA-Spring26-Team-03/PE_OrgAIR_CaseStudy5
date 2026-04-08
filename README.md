@@ -20,8 +20,8 @@
 |-----------|------|
 | Demo Video | [[Demo Video](#)](https://youtu.be/mWOOr0O2oGk) |
 | Interactive Codelab | [CS5 Agentic Portfolio Codelab](https://codelabs-preview.appspot.com/?file_id=1qHfY9Cs6SipX6US_RT8QELEkXO79qfaO5GIZLKRGJLc#0) |
-| Deployed FastAPI Link | |
-| Deployed App Link |  |
+| Deployed FastAPI Link | http://34.60.223.69:8000/docs |
+| Deployed App Link | http://34.60.223.69:8501 |
 
 ---
 
